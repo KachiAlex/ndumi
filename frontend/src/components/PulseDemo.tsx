@@ -71,6 +71,15 @@ export function PulseDemo() {
         <div
           className={`orb-wrap w-[150px] h-[150px] mx-auto mb-[18px] relative flex items-center justify-center cursor-pointer ${stateClass}`}
           onClick={advance}
+          role="button"
+          tabIndex={0}
+          aria-label={current ? `${current.state}: ${current.who} in ${current.label}` : "Tap to start the demo"}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              advance();
+            }
+          }}
         >
           <div className={`orb-ring ${current ? "active" : ""}`} />
           <div className={`orb-ring active`} style={{ animationDelay: "0.5s", opacity: current ? undefined : 0 }} />

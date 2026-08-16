@@ -14,14 +14,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg text-text font-sans">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-panel focus:border focus:border-line focus:px-4 focus:py-2 focus:text-sm"
+      >
+        Skip to content
+      </a>
       <Navbar />
-      <Hero />
-      <Channels />
-      <Languages />
-      <CallFlow />
-      <WhatsApp />
-      <Developer />
-      <CTABand />
+      <main id="main">
+        <Hero />
+        <Channels />
+        <Languages />
+        <CallFlow />
+        <WhatsApp />
+        <Developer />
+        <CTABand />
+      </main>
       <Footer />
     </div>
   );

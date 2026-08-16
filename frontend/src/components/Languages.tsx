@@ -17,7 +17,7 @@ export function Languages() {
           title="It answers in the language it was asked in."
           description={'No menu, no "press 1 for Yorùbá." Ndumi detects the language as the customer speaks and replies in kind — including mid-sentence switches.'}
         />
-        <div className="reveal grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="reveal grid grid-cols-1 xs:grid-cols-2 md:grid-cols-5 gap-3">
           {LANGS.map((l) => (
             <div key={l.name} className="bg-panel-2 border border-line rounded-2xl p-[18px_16px]">
               <div className="font-display italic font-semibold text-lg mb-2 text-gold">{l.name}</div>
