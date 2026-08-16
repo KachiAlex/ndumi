@@ -9,6 +9,7 @@ import { checkGuardrails, shouldEscalate } from "./guardrails.js";
 import { GUARDRAILS } from "./tools.js";
 import { canTransition } from "./stateMachine.js";
 import type { SessionStatus } from "@ndumi/shared";
+import { retrieveContext, type RetrievedContext } from "../knowledge/index.js";
 
 export interface AgentContext {
   sessionId: string;
@@ -25,6 +26,7 @@ export interface AgentDecision {
   responseLanguage: LanguageCode;
   newStatus: SessionStatus;
   escalate: boolean;
+  retrievedContext?: RetrievedContext;
 }
 
 export async function reason(ctx: AgentContext, customerText: string): Promise<AgentDecision> {
@@ -62,8 +64,11 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     };
   }
 
+  // Retrieve relevant knowledge for this query
+  const retrieved = retrieveContext(customerText, 3);
   const lowerText = customerText.toLowerCase();
 
+  // Check if any tool-related keywords match
   if (lowerText.includes("order") || lowerText.includes("delivery") || lowerText.includes("tracking")) {
     const orderIdMatch = customerText.match(/ORD-\d+/i);
     const orderId = orderIdMatch?.[0] || "ORD-00000";
@@ -77,6 +82,7 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
       responseLanguage: ctx.language,
       newStatus: "awaiting_tool",
       escalate: false,
+      retrievedContext: retrieved,
     };
   }
 
@@ -91,6 +97,7 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
       responseLanguage: ctx.language,
       newStatus: "awaiting_tool",
       escalate: false,
+      retrievedContext: retrieved,
     };
   }
 
@@ -106,12 +113,30 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
       responseLanguage: ctx.language,
       newStatus: "awaiting_tool",
       escalate: false,
+      retrievedContext: retrieved,
+    };
+  }
+
+  // No tool needed — use retrieved knowledge to inform response
+  if (retrieved.results.length > 0 && retrieved.results[0].score > 0.1) {
+    const topDoc = retrieved.results[0].document;
+    return {
+      thinking: {
+        reasoning: `Retrieved relevant knowledge: "${topDoc.title}" (score: ${retrieved.results[0].score.toFixed(3)}). Using it to answer.`,
+        toolsConsidered: [],
+      },
+      toolCalls: [],
+      responseText: topDoc.content,
+      responseLanguage: ctx.language,
+      newStatus: "responding",
+      escalate: false,
+      retrievedContext: retrieved,
     };
   }
 
   return {
     thinking: {
-      reasoning: "General greeting or query. No tools needed — respond conversationally.",
+      reasoning: "General greeting or query. No tools or relevant knowledge found — respond conversationally.",
       toolsConsidered: [],
     },
     toolCalls: [],
@@ -119,6 +144,7 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     responseLanguage: ctx.language,
     newStatus: "responding",
     escalate: false,
+    retrievedContext: retrieved,
   };
 }
 

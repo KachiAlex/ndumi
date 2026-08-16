@@ -1,6 +1,7 @@
 import type { WebSocket } from "ws";
 import type { IncomingMessage } from "http";
 import { sessionStore } from "../sessionStore.js";
+import { redisStore } from "../redisStore.js";
 import { reason, act } from "../agent/index.js";
 import type { AgentContext } from "../agent/index.js";
 import type {
@@ -101,6 +102,7 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
         sendEvent(ws, "final_transcript", finalData);
 
         conversationHistory.push({ speaker: "customer", text: finalText });
+        await redisStore.addToHistory(sessionId, "customer", finalText);
         turnCount++;
 
         // Agent reasoning
@@ -157,7 +159,17 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
         sendEvent(ws, "agent_audio_chunk", audioData);
 
         conversationHistory.push({ speaker: "agent", text: finalResponseText });
+        await redisStore.addToHistory(sessionId, "agent", finalResponseText);
         sessionStore.updateStatus(sessionId, finalStatus);
+
+        // Create handoff record if escalated
+        if (finalStatus === "escalated") {
+          const transcripts = sessionStore.getTranscripts(sessionId);
+          const handoffReason = decision.thinking.reasoning;
+          await redisStore.createHandoff(sessionId, handoffReason, "normal", transcripts);
+          console.log(`[WS] Session ${sessionId} escalated — handoff record created`);
+        }
+
         setState(ws, sessionId, "idle");
         break;
       }
