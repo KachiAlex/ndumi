@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useReveal } from "./hooks/useReveal";
 import { Navbar } from "./components/Navbar";
 import { Hero } from "./components/Hero";
@@ -8,9 +9,24 @@ import { WhatsApp } from "./components/WhatsApp";
 import { Developer } from "./components/Developer";
 import { CTABand } from "./components/CTABand";
 import { Footer } from "./components/Footer";
+import { MeetingRoom } from "./components/MeetingRoom";
 
 export default function App() {
   useReveal();
+
+  const [route, setRoute] = useState<string>(window.location.hash);
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(window.location.hash);
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  const isMeeting = route === "#meeting" || route === "#/meeting";
+
+  if (isMeeting) {
+    return <MeetingRoom onLeave={() => { window.location.hash = ""; }} />;
+  }
 
   return (
     <div className="min-h-screen bg-bg text-text font-sans">

@@ -13,7 +13,7 @@ export function CTABand() {
             <p className="text-text-dim text-[14.5px] mb-6.5 m-0">
               Talk to the demo above, or bring Ndumi into your own product this week.
             </p>
-            <a href="#pulse" className="btn-primary">Try the live demo</a>
+            <a href="#meeting" className="btn-primary">Talk to Ndumi</a>
           </div>
         </div>
       </Wrap>

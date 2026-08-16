@@ -30,7 +30,7 @@ export function Navbar() {
 
           <div className="flex items-center gap-3">
             <a
-              href="#pulse"
+              href="#meeting"
               className="rounded-full font-bold text-[12.5px] tracking-tight px-[18px] py-[9px]"
               style={{
                 background: "linear-gradient(135deg, #ddab4e, #c48e3a)",
