@@ -20,7 +20,16 @@ const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
 app.use(express.json({ limit: "10mb" }));
-app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
+const allowedOrigins = (process.env.CORS_ORIGIN || "*").split(",").map((s) => s.trim());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
+}));
 
 app.get("/health", async (_req, res) => {
   const redisAvailable = await redisStore.isAvailable();
