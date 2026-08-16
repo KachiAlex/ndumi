@@ -2,7 +2,7 @@ import { SYSTEM_PROMPTS } from "../agent/tools.js";
 import type { LanguageCode } from "@ndumi/shared";
 
 const GEMINI_MODEL = "gemini-1.5-flash";
-const API_KEY = process.env.GEMINI_API_KEY || "";
+const getApiKey = () => process.env.GEMINI_API_KEY || "";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 interface GeminiPart {
@@ -34,7 +34,8 @@ export async function generateResponse(
   customerText: string,
   retrievedContext?: string,
 ): Promise<string> {
-  if (!API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     console.warn("[LLM] No GEMINI_API_KEY set, falling back to rule-based response");
     return "";
   }
@@ -61,7 +62,7 @@ export async function generateResponse(
   };
 
   try {
-    const res = await fetch(`${BASE_URL}?key=${API_KEY}`, {
+    const res = await fetch(`${BASE_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

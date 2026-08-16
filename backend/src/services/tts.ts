@@ -1,7 +1,8 @@
 import type { LanguageCode } from "@ndumi/shared";
 
 const NJA_LINGO_BASE_URL = "https://api.9jalingo.org/v1";
-const API_KEY = process.env.NJA_LINGO_API_KEY || "";
+
+const getApiKey = () => process.env.NJA_LINGO_API_KEY || "";
 
 const DEFAULT_VOICES: Record<LanguageCode, string> = {
   ig: "adaeze_ig",
@@ -26,7 +27,8 @@ export async function synthesize(
     temperature?: number;
   },
 ): Promise<TtsResult> {
-  if (!API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     console.warn("[TTS] No NJA_LINGO_API_KEY set");
     return { audioBuffer: Buffer.alloc(0), mimeType: "audio/wav", duration: 0 };
   }
@@ -47,7 +49,7 @@ export async function synthesize(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
     });

@@ -1,5 +1,5 @@
 const SPITCH_BASE_URL = "https://api.spitch.app";
-const API_KEY = process.env.SPITCH_API_KEY || "";
+const getApiKey = () => process.env.SPITCH_API_KEY || "";
 
 interface SpitchTranscriptionResponse {
   text: string;
@@ -22,7 +22,8 @@ export async function transcribe(
     timestamp?: "sentence" | "word";
   },
 ): Promise<AsrResult> {
-  if (!API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     console.warn("[ASR] No SPITCH_API_KEY set");
     return { text: "" };
   }
@@ -47,7 +48,7 @@ export async function transcribe(
     const res = await fetch(`${SPITCH_BASE_URL}/v1/transcriptions`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: formData,
     });
