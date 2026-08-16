@@ -25,7 +25,12 @@ ttsRouter.post("/", async (req, res) => {
   });
 
   if (!result.base64) {
-    res.status(502).json({ error: "TTS synthesis failed" });
+    res.status(200).json({
+      audioUrl: "",
+      duration: Math.ceil(body.text.length / 15),
+      mimeType: "audio/mpeg",
+      fallback: "browser_tts",
+    } as TtsResponse & { fallback: string });
     return;
   }
 

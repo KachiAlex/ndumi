@@ -58,15 +58,20 @@ async function speakViaBackend(text: string, lang: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, language: lang }),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      speak(text, lang);
+      return;
+    }
     const data = await res.json();
     if (data.audioUrl && typeof data.audioUrl === "string" && data.audioUrl.startsWith("data:audio")) {
       const audio = new Audio(data.audioUrl);
       audio.volume = 1.0;
       await audio.play();
+    } else {
+      // Backend returned empty audio (both providers exhausted) — use browser TTS
+      speak(text, lang);
     }
   } catch {
-    // Fallback to browser speech synthesis
     speak(text, lang);
   }
 }
