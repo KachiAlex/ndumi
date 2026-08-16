@@ -13,6 +13,17 @@
       radial-gradient(ellipse 800px 500px at 100% 6%, rgba(221, 171, 78, 0.06), transparent 55%),
       #0a0e1c;
     color: #f2eee3;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  img,
+  svg {
+    display: block;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
   }
 
   ::selection {
@@ -23,6 +34,114 @@
   :focus-visible {
     outline: 2px solid #ddab4e;
     outline-offset: 3px;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full px-6 py-3 text-[13.5px] font-bold tracking-tight;
+    background: linear-gradient(135deg, #ddab4e, #c48e3a);
+    color: #2a1a02;
+    box-shadow: 0 10px 26px -10px rgba(221, 171, 78, 0.5);
+    transition: filter 0.15s ease, transform 0.15s ease;
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.06);
+  }
+
+  .btn-primary:active {
+    transform: scale(0.97);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-full border border-line px-[22px] py-3 text-[13.5px] font-medium text-text-dim;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .btn-ghost:hover {
+    @apply border-indigo text-text;
+  }
+
+  .nav-mark {
+    @apply flex items-center justify-center rounded-full;
+    width: 30px;
+    height: 30px;
+    background: radial-gradient(circle at 32% 28%, #5b6ee8, #2c3a9e 75%);
+    border: 1px solid rgba(221, 171, 78, 0.35);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 15px;
+    color: #ddab4e;
+  }
+
+  .orb {
+    @apply flex items-center justify-center rounded-full;
+    width: 118px;
+    height: 118px;
+    background: radial-gradient(circle at 33% 28%, #33409c 0%, #171e4a 55%, #0d1130 100%);
+    border: 1px solid rgba(91, 110, 232, 0.4);
+    box-shadow: inset 0 0 22px rgba(91, 110, 232, 0.18), 0 0 36px -12px rgba(91, 110, 232, 0.35);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 42px;
+    color: #ddab4e;
+    transition: box-shadow 0.3s ease;
+  }
+
+  .orb-wrap.listening .orb {
+    box-shadow: inset 0 0 22px rgba(210, 96, 58, 0.25), 0 0 40px -10px rgba(210, 96, 58, 0.5);
+  }
+
+  .orb-wrap.thinking .orb {
+    box-shadow: inset 0 0 22px rgba(221, 171, 78, 0.25), 0 0 40px -10px rgba(221, 171, 78, 0.5);
+  }
+
+  .orb-wrap {
+    @apply relative flex items-center justify-center;
+  }
+
+  .orb-ring {
+    @apply absolute inset-0 rounded-full;
+    border: 1.5px solid rgba(91, 110, 232, 0.16);
+    opacity: 0;
+  }
+
+  .orb-ring.active {
+    animation: ring-pulse 1.6s ease-out infinite;
+  }
+
+  .orb-dash {
+    @apply absolute rounded-full;
+    inset: 9px;
+    border: 1px dashed rgba(221, 171, 78, 0.28);
+  }
+
+  .pulse-card-bg {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68'%3E%3Ccircle cx='34' cy='34' r='20' fill='none' stroke='%235B6EE8' stroke-width='1' opacity='0.32'/%3E%3Ccircle cx='34' cy='34' r='3' fill='%235B6EE8' opacity='0.35'/%3E%3Cpath d='M0 34 L34 0 L68 34 L34 68 Z' fill='none' stroke='%235B6EE8' stroke-width='0.6' opacity='0.2'/%3E%3C/svg%3E");
+    background-size: 68px 68px;
+    mask-image: radial-gradient(ellipse 65% 55% at 50% 40%, black 0%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 65% 55% at 50% 40%, black 0%, transparent 75%);
+  }
+
+  .cta-band-bg {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68'%3E%3Ccircle cx='34' cy='34' r='20' fill='none' stroke='%23DDAB4E' stroke-width='1' opacity='0.28'/%3E%3C/svg%3E");
+    background-size: 68px 68px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 0%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 0%, transparent 78%);
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+
+  .reveal.in {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
