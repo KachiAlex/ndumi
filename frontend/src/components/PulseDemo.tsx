@@ -26,31 +26,64 @@ const LANGS = [
   { code: "en", label: "English" },
 ];
 
+const SPEAKING_STATES = STATES.filter((s) => s.state === "speaking");
+
 const BCP47: Record<string, string> = {
-  ig: "ig",
-  yo: "yo",
-  ha: "ha",
-  pcm: "pcm",
-  en: "en-US",
+  ig: "ig-NG",
+  yo: "yo-NG",
+  ha: "ha-NG",
+  pcm: "en-NG",
+  en: "en-NG",
 };
+
+function findNigerianVoice(lang: string): SpeechSynthesisVoice | null {
+  if (typeof window === "undefined" || !window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+
+  const langPrefix = lang.split("-")[0];
+
+  // Priority 1: Nigerian voice for the language
+  const ngMatch = voices.find((v) => v.lang.toLowerCase().includes("ng") && v.lang.toLowerCase().startsWith(langPrefix));
+  if (ngMatch) return ngMatch;
+
+  // Priority 2: British English (closer to Nigerian accent than US)
+  if (langPrefix === "en") {
+    const gbMatch = voices.find((v) => v.lang.toLowerCase().startsWith("en-gb"));
+    if (gbMatch) return gbMatch;
+  }
+
+  // Priority 3: Any voice matching the language prefix
+  const langMatch = voices.find((v) => v.lang.toLowerCase().startsWith(langPrefix));
+  if (langMatch) return langMatch;
+
+  // Priority 4: Any African voice
+  const afMatch = voices.find((v) => {
+    const l = v.lang.toLowerCase();
+    return l.includes("ng") || l.includes("af") || l.includes("ke") || l.includes("gh");
+  });
+  if (afMatch) return afMatch;
+
+  // Fallback: default voice
+  return voices[0];
+}
 
 function speak(text: string, lang: string) {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = BCP47[lang] || "en-US";
-  utter.rate = 0.95;
-  utter.pitch = 1;
+  utter.lang = BCP47[lang] || "en-NG";
+  utter.rate = 0.92;
+  utter.pitch = 1.0;
   utter.volume = 1.0;
 
-  const voices = window.speechSynthesis.getVoices();
-  const match = voices.find((v) => v.lang.startsWith(lang)) || voices.find((v) => v.lang.startsWith(lang.split("-")[0]));
-  if (match) utter.voice = match;
+  const voice = findNigerianVoice(lang);
+  if (voice) utter.voice = voice;
 
   window.speechSynthesis.speak(utter);
 }
 
-async function speakViaBackend(text: string, lang: string) {
+async function upgradeToBackendTts(text: string, lang: string) {
   const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:3001/v1";
   try {
     const res = await fetch(`${apiBase}/tts`, {
@@ -58,21 +91,18 @@ async function speakViaBackend(text: string, lang: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, language: lang }),
     });
-    if (!res.ok) {
-      speak(text, lang);
-      return;
-    }
+    if (!res.ok) return;
     const data = await res.json();
     if (data.audioUrl && typeof data.audioUrl === "string" && data.audioUrl.startsWith("data:audio")) {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
       const audio = new Audio(data.audioUrl);
       audio.volume = 1.0;
       await audio.play();
-    } else {
-      // Backend returned empty audio (both providers exhausted) — use browser TTS
-      speak(text, lang);
     }
   } catch {
-    speak(text, lang);
+    // Browser TTS already playing, no action needed
   }
 }
 
@@ -99,27 +129,26 @@ export function PulseDemo() {
 
   const advance = useCallback(() => {
     setIdx((prev) => {
-      const next = (prev + 1) % STATES.length;
-      const s = STATES[next];
+      const next = (prev + 1) % SPEAKING_STATES.length;
+      const s = SPEAKING_STATES[next];
 
       if (waveTimerRef.current) {
         clearInterval(waveTimerRef.current);
         waveTimerRef.current = null;
       }
 
-      if (s.state === "speaking") {
-        waveTimerRef.current = setInterval(() => {
-          setWaveHeights(Array.from({ length: 16 }, () => 4 + Math.round(Math.random() * 12)));
-        }, 130);
-        speakViaBackend(s.text, s.lang);
-      } else {
-        setWaveHeights(Array.from({ length: 16 }, () => 4));
-        if (typeof window !== "undefined" && window.speechSynthesis) {
-          window.speechSynthesis.cancel();
-        }
-      }
+      // Start waveform animation immediately
+      waveTimerRef.current = setInterval(() => {
+        setWaveHeights(Array.from({ length: 16 }, () => 4 + Math.round(Math.random() * 12)));
+      }, 130);
 
-      return next;
+      // Speak immediately via browser TTS (sync, works on first click)
+      speak(s.text, s.lang);
+
+      // Try to upgrade to backend Nigerian-accented TTS (async, cancels browser TTS if successful)
+      upgradeToBackendTts(s.text, s.lang);
+
+      return STATES.indexOf(s);
     });
   }, []);
 
@@ -188,7 +217,7 @@ export function PulseDemo() {
         </div>
 
         <div className="text-center text-[11px] text-text-faint mt-3.5">
-          Each tap moves Ndumi through listening → thinking → speaking, in a new language.
+          Each tap makes Ndumi speak in a new Nigerian language.
         </div>
       </div>
     </div>
