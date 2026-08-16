@@ -10,6 +10,7 @@ import { GUARDRAILS } from "./tools.js";
 import { canTransition } from "./stateMachine.js";
 import type { SessionStatus } from "@ndumi/shared";
 import { retrieveContext, type RetrievedContext } from "../knowledge/index.js";
+import { generateResponse, buildContextString, getSystemPrompt } from "../services/llm.js";
 
 export interface AgentContext {
   sessionId: string;
@@ -117,12 +118,39 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     };
   }
 
-  // No tool needed — use retrieved knowledge to inform response
+  // No tool needed — use Gemini LLM with RAG context for response
+  const contextString = buildContextString(ctx.language, retrieved);
+  const systemPrompt = getSystemPrompt(ctx.language);
+  const llmResponse = await generateResponse(
+    systemPrompt,
+    ctx.conversationHistory,
+    customerText,
+    contextString,
+  );
+
+  if (llmResponse) {
+    return {
+      thinking: {
+        reasoning: contextString
+          ? `Used Gemini with RAG context (${retrieved.results.length} docs retrieved).`
+          : "Used Gemini to generate a conversational response.",
+        toolsConsidered: [],
+      },
+      toolCalls: [],
+      responseText: llmResponse,
+      responseLanguage: ctx.language,
+      newStatus: "responding",
+      escalate: false,
+      retrievedContext: retrieved,
+    };
+  }
+
+  // Fallback: use retrieved knowledge directly if LLM is unavailable
   if (retrieved.results.length > 0 && retrieved.results[0].score > 0.1) {
     const topDoc = retrieved.results[0].document;
     return {
       thinking: {
-        reasoning: `Retrieved relevant knowledge: "${topDoc.title}" (score: ${retrieved.results[0].score.toFixed(3)}). Using it to answer.`,
+        reasoning: `LLM unavailable. Retrieved relevant knowledge: "${topDoc.title}" (score: ${retrieved.results[0].score.toFixed(3)}). Using it to answer.`,
         toolsConsidered: [],
       },
       toolCalls: [],
@@ -136,7 +164,7 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
 
   return {
     thinking: {
-      reasoning: "General greeting or query. No tools or relevant knowledge found — respond conversationally.",
+      reasoning: "LLM and RAG unavailable — responding with greeting.",
       toolsConsidered: [],
     },
     toolCalls: [],

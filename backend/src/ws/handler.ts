@@ -4,6 +4,8 @@ import { sessionStore } from "../sessionStore.js";
 import { redisStore } from "../redisStore.js";
 import { reason, act } from "../agent/index.js";
 import type { AgentContext } from "../agent/index.js";
+import { transcribe } from "../services/asr.js";
+import { synthesizeToBase64 } from "../services/tts.js";
 import type {
   WsEvent,
   WsEventType,
@@ -68,18 +70,64 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
     switch (msg.type) {
       case "audio_chunk": {
         setState(ws, sessionId, "listening");
-        const partialData: PartialTranscriptData = {
-          text: (msg.data?.text as string) || "",
-          language: session.language ?? "en",
-          isFinal: false,
-        };
-        sendEvent(ws, "partial_transcript", partialData);
+        // If audio bytes are provided, send to Spitch for partial transcription
+        const audioBytes = msg.data?.audio as string | undefined;
+        if (audioBytes) {
+          try {
+            const audioBuffer = Buffer.from(audioBytes, "base64");
+            const lang = session.language || "en";
+            const asrResult = await transcribe(audioBuffer, lang);
+            const partialData: PartialTranscriptData = {
+              text: asrResult.text || "",
+              language: (asrResult.language as LanguageCode) || lang,
+              isFinal: false,
+            };
+            sendEvent(ws, "partial_transcript", partialData);
+          } catch {
+            const partialData: PartialTranscriptData = {
+              text: (msg.data?.text as string) || "",
+              language: session.language ?? "en",
+              isFinal: false,
+            };
+            sendEvent(ws, "partial_transcript", partialData);
+          }
+        } else {
+          const partialData: PartialTranscriptData = {
+            text: (msg.data?.text as string) || "",
+            language: session.language ?? "en",
+            isFinal: false,
+          };
+          sendEvent(ws, "partial_transcript", partialData);
+        }
         break;
       }
 
       case "audio_end": {
-        const finalText = (msg.data?.text as string) || "Hello, how can I help you today?";
-        const detectedLang: LanguageCode = (msg.data?.language as LanguageCode) || session.language || "en";
+        let finalText = (msg.data?.text as string) || "";
+        let detectedLang: LanguageCode = (msg.data?.language as LanguageCode) || session.language || "en";
+
+        // If audio bytes are provided, use Spitch for final transcription
+        const audioBytes = msg.data?.audio as string | undefined;
+        if (audioBytes) {
+          try {
+            const audioBuffer = Buffer.from(audioBytes, "base64");
+            const asrResult = await transcribe(audioBuffer, detectedLang, {
+              timestamp: "sentence",
+            });
+            if (asrResult.text) {
+              finalText = asrResult.text;
+            }
+            if (asrResult.language) {
+              detectedLang = asrResult.language as LanguageCode;
+            }
+          } catch (err) {
+            console.error("[WS] Spitch ASR failed:", err);
+          }
+        }
+
+        if (!finalText) {
+          finalText = "Hello, how can I help you today?";
+        }
 
         sessionStore.setLanguage(sessionId, detectedLang);
 
@@ -151,12 +199,36 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
         const textData: AgentTextData = { text: finalResponseText, language: detectedLang };
         sendEvent(ws, "agent_text", textData);
 
-        const audioData: AgentAudioChunkData = {
-          chunk: "PLACEHOLDER_AUDIO_BASE64",
-          sequence: 0,
-          mimeType: "audio/mpeg",
-        };
-        sendEvent(ws, "agent_audio_chunk", audioData);
+        // Synthesize speech via 9ja Lingo TTS
+        try {
+          const ttsResult = await synthesizeToBase64(finalResponseText, detectedLang, {
+            responseFormat: "mp3",
+          });
+
+          if (ttsResult.base64) {
+            const audioData: AgentAudioChunkData = {
+              chunk: ttsResult.base64,
+              sequence: 0,
+              mimeType: ttsResult.mimeType,
+            };
+            sendEvent(ws, "agent_audio_chunk", audioData);
+          } else {
+            const audioData: AgentAudioChunkData = {
+              chunk: "",
+              sequence: 0,
+              mimeType: "audio/mpeg",
+            };
+            sendEvent(ws, "agent_audio_chunk", audioData);
+          }
+        } catch (ttsErr) {
+          console.error("[WS] 9ja Lingo TTS failed:", ttsErr);
+          const audioData: AgentAudioChunkData = {
+            chunk: "",
+            sequence: 0,
+            mimeType: "audio/mpeg",
+          };
+          sendEvent(ws, "agent_audio_chunk", audioData);
+        }
 
         conversationHistory.push({ speaker: "agent", text: finalResponseText });
         await redisStore.addToHistory(sessionId, "agent", finalResponseText);

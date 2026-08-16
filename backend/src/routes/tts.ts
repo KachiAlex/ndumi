@@ -1,11 +1,12 @@
 import { Router } from "express";
 import type { TtsRequest, TtsResponse, LanguageCode } from "@ndumi/shared";
+import { synthesizeToBase64 } from "../services/tts.js";
 
 export const ttsRouter = Router();
 
 const VALID_LANGS: LanguageCode[] = ["ig", "yo", "ha", "pcm", "en"];
 
-ttsRouter.post("/", (req, res) => {
+ttsRouter.post("/", async (req, res) => {
   const body = req.body as TtsRequest;
 
   if (!body?.text || typeof body.text !== "string") {
@@ -18,12 +19,20 @@ ttsRouter.post("/", (req, res) => {
     return;
   }
 
-  // Placeholder: in production this calls the TTS service (Storm TTS / Tavus)
-  // and returns a streaming audio URL or base64 chunks.
+  const result = await synthesizeToBase64(body.text, body.language, {
+    voice: body.voice,
+    responseFormat: "mp3",
+  });
+
+  if (!result.base64) {
+    res.status(502).json({ error: "TTS synthesis failed" });
+    return;
+  }
+
   const response: TtsResponse = {
-    audioUrl: `data:audio/mpeg;base64,PLACEHOLDER_TTS_AUDIO`,
-    duration: Math.ceil(body.text.length / 15),
-    mimeType: "audio/mpeg",
+    audioUrl: `data:${result.mimeType};base64,${result.base64}`,
+    duration: result.duration,
+    mimeType: result.mimeType,
   };
 
   res.json(response);
