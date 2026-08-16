@@ -9,7 +9,7 @@ const DEFAULT_VOICES: Record<LanguageCode, string> = {
   yo: "adeola_yo",
   ha: "aisha_ha",
   pcm: "ada_pcm",
-  en: "chukwuma_pcm",
+  en: "ada_pcm",
 };
 
 export interface TtsResult {
