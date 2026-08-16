@@ -77,7 +77,8 @@ async function synthesizeSpitch(
   if (!apiKey) throw new Error("No SPITCH_API_KEY");
 
   const voice = SPITCH_VOICES[language] || SPITCH_VOICES.pcm;
-  const spitchLang = language === "en" ? "en" : language;
+  // Spitch uses ISO 639 codes — pcm isn't valid, use en for Pidgin
+  const spitchLang = language === "en" ? "en" : language === "pcm" ? "en" : language;
 
   const body = {
     text,
