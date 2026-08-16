@@ -3,7 +3,14 @@ import type { LanguageCode } from "@ndumi/shared";
 
 const GEMINI_MODEL = "gemini-flash-latest";
 const getApiKey = () => process.env.GEMINI_API_KEY || "";
-const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+function getBaseUrl(): string {
+  const proxyUrl = process.env.GEMINI_PROXY_URL;
+  if (proxyUrl) {
+    return proxyUrl;
+  }
+  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+}
 
 interface GeminiPart {
   text: string;
@@ -62,7 +69,13 @@ export async function generateResponse(
   };
 
   try {
-    const res = await fetch(`${BASE_URL}?key=${apiKey}`, {
+    const baseUrl = getBaseUrl();
+    const isProxy = !!process.env.GEMINI_PROXY_URL;
+    const targetUrl = isProxy
+      ? `${baseUrl}?model=${GEMINI_MODEL}`
+      : `${baseUrl}?key=${apiKey}`;
+
+    const res = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
