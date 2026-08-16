@@ -9,7 +9,7 @@ const DEFAULT_VOICES: Record<LanguageCode, string> = {
   yo: "adeola_yo",
   ha: "aisha_ha",
   pcm: "ada_pcm",
-  en: "ada_pcm",
+  en: "chukwuma_pcm",
 };
 
 export interface TtsResult {
@@ -36,10 +36,13 @@ export async function synthesize(
   const voice = options?.voice || DEFAULT_VOICES[language] || DEFAULT_VOICES.pcm;
   const responseFormat = options?.responseFormat || "mp3";
 
+  // 9ja Lingo supports ig, yo, ha, pcm — map English to Pidgin
+  const ttsLang = language === "en" ? "pcm" : language;
+
   const body = {
     input: text,
     voice,
-    lang: language,
+    lang: ttsLang,
     response_format: responseFormat,
     temperature: options?.temperature ?? 0.95,
   };
