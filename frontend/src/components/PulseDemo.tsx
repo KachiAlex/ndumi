@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const STATES = [
   { lang: "ig", label: "Igbo", who: "Customer", state: "listening", text: "Kedu, kedu ka m nwere ike inyere gị aka?" },
@@ -26,12 +26,49 @@ const LANGS = [
   { code: "en", label: "English" },
 ];
 
+const BCP47: Record<string, string> = {
+  ig: "ig",
+  yo: "yo",
+  ha: "ha",
+  pcm: "pcm",
+  en: "en-US",
+};
+
+function speak(text: string, lang: string) {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = BCP47[lang] || "en-US";
+  utter.rate = 0.95;
+  utter.pitch = 1;
+
+  const voices = window.speechSynthesis.getVoices();
+  const match = voices.find((v) => v.lang.startsWith(lang)) || voices.find((v) => v.lang.startsWith(lang.split("-")[0]));
+  if (match) utter.voice = match;
+
+  window.speechSynthesis.speak(utter);
+}
+
 export function PulseDemo() {
   const [idx, setIdx] = useState(-1);
   const [waveHeights, setWaveHeights] = useState<number[]>(() =>
     Array.from({ length: 16 }, () => 4)
   );
   const waveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+    return () => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const advance = useCallback(() => {
     setIdx((prev) => {
@@ -47,8 +84,12 @@ export function PulseDemo() {
         waveTimerRef.current = setInterval(() => {
           setWaveHeights(Array.from({ length: 16 }, () => 4 + Math.round(Math.random() * 12)));
         }, 130);
+        speak(s.text, s.lang);
       } else {
         setWaveHeights(Array.from({ length: 16 }, () => 4));
+        if (typeof window !== "undefined" && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
       }
 
       return next;
