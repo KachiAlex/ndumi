@@ -1,10 +1,12 @@
 import type { LanguageCode } from "@ndumi/shared";
 
 const NJA_LINGO_BASE_URL = "https://api.9jalingo.org/v1";
+const SPITCH_BASE_URL = "https://api.spitch.app";
 
-const getApiKey = () => process.env.NJA_LINGO_API_KEY || "";
+const getNjaLingoKey = () => process.env.NJA_LINGO_API_KEY || "";
+const getSpitchKey = () => process.env.SPITCH_API_KEY || "";
 
-const DEFAULT_VOICES: Record<LanguageCode, string> = {
+const NJA_VOICES: Record<LanguageCode, string> = {
   ig: "adaeze_ig",
   yo: "adeola_yo",
   ha: "aisha_ha",
@@ -12,10 +14,100 @@ const DEFAULT_VOICES: Record<LanguageCode, string> = {
   en: "ada_pcm",
 };
 
+const SPITCH_VOICES: Record<LanguageCode, string> = {
+  ig: "ngozi",
+  yo: "sade",
+  ha: "amina",
+  pcm: "femi",
+  en: "femi",
+};
+
 export interface TtsResult {
   audioBuffer: Buffer;
   mimeType: string;
   duration: number;
+  provider: "9ja_lingo" | "spitch";
+}
+
+async function synthesizeNjaLingo(
+  text: string,
+  language: LanguageCode,
+  responseFormat: string,
+): Promise<TtsResult> {
+  const apiKey = getNjaLingoKey();
+  if (!apiKey) throw new Error("No NJA_LINGO_API_KEY");
+
+  const voice = NJA_VOICES[language] || NJA_VOICES.pcm;
+  const ttsLang = language === "en" ? "pcm" : language;
+
+  const body = {
+    input: text,
+    voice,
+    lang: ttsLang,
+    response_format: responseFormat,
+    temperature: 0.95,
+  };
+
+  const res = await fetch(`${NJA_LINGO_BASE_URL}/audio/speech`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`9ja Lingo ${res.status}: ${errText}`);
+  }
+
+  const audioBuffer = Buffer.from(await res.arrayBuffer());
+  return {
+    audioBuffer,
+    mimeType: `audio/${responseFormat}`,
+    duration: Math.ceil(text.length / 15),
+    provider: "9ja_lingo",
+  };
+}
+
+async function synthesizeSpitch(
+  text: string,
+  language: LanguageCode,
+  responseFormat: string,
+): Promise<TtsResult> {
+  const apiKey = getSpitchKey();
+  if (!apiKey) throw new Error("No SPITCH_API_KEY");
+
+  const voice = SPITCH_VOICES[language] || SPITCH_VOICES.pcm;
+  const spitchLang = language === "en" ? "en" : language;
+
+  const body = {
+    text,
+    voice,
+    language: spitchLang,
+    format: responseFormat,
+    speed: 1.0,
+  };
+
+  const res = await fetch(`${SPITCH_BASE_URL}/v1/speech`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Spitch ${res.status}: ${errText}`);
+  }
+
+  const audioBuffer = Buffer.from(await res.arrayBuffer());
+  return {
+    audioBuffer,
+    mimeType: `audio/${responseFormat}`,
+    duration: Math.ceil(text.length / 15),
+    provider: "spitch",
+  };
 }
 
 export async function synthesize(
@@ -27,50 +119,21 @@ export async function synthesize(
     temperature?: number;
   },
 ): Promise<TtsResult> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.warn("[TTS] No NJA_LINGO_API_KEY set");
-    return { audioBuffer: Buffer.alloc(0), mimeType: "audio/wav", duration: 0 };
-  }
-
-  const voice = options?.voice || DEFAULT_VOICES[language] || DEFAULT_VOICES.pcm;
   const responseFormat = options?.responseFormat || "mp3";
 
-  // 9ja Lingo supports ig, yo, ha, pcm — map English to Pidgin
-  const ttsLang = language === "en" ? "pcm" : language;
-
-  const body = {
-    input: text,
-    voice,
-    lang: ttsLang,
-    response_format: responseFormat,
-    temperature: options?.temperature ?? 0.95,
-  };
-
+  // Try 9ja Lingo first
   try {
-    const res = await fetch(`${NJA_LINGO_BASE_URL}/audio/speech`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error("[TTS] 9ja Lingo error:", res.status, errText);
-      return { audioBuffer: Buffer.alloc(0), mimeType: `audio/${responseFormat}`, duration: 0 };
-    }
-
-    const audioBuffer = Buffer.from(await res.arrayBuffer());
-    const mimeType = `audio/${responseFormat}`;
-    const duration = Math.ceil(text.length / 15);
-
-    return { audioBuffer, mimeType, duration };
+    return await synthesizeNjaLingo(text, language, responseFormat);
   } catch (err) {
-    console.error("[TTS] 9ja Lingo fetch failed:", err);
-    return { audioBuffer: Buffer.alloc(0), mimeType: `audio/${responseFormat}`, duration: 0 };
+    console.warn("[TTS] 9ja Lingo failed, falling back to Spitch:", (err as Error).message);
+  }
+
+  // Fallback to Spitch
+  try {
+    return await synthesizeSpitch(text, language, responseFormat);
+  } catch (err) {
+    console.error("[TTS] Spitch also failed:", (err as Error).message);
+    return { audioBuffer: Buffer.alloc(0), mimeType: `audio/${responseFormat}`, duration: 0, provider: "spitch" };
   }
 }
 
@@ -88,5 +151,5 @@ export async function synthesizeToBase64(
 }
 
 export function getDefaultVoice(lang: LanguageCode): string {
-  return DEFAULT_VOICES[lang] || DEFAULT_VOICES.pcm;
+  return NJA_VOICES[lang] || NJA_VOICES.pcm;
 }

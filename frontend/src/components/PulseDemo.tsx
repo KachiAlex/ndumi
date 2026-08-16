@@ -41,12 +41,34 @@ function speak(text: string, lang: string) {
   utter.lang = BCP47[lang] || "en-US";
   utter.rate = 0.95;
   utter.pitch = 1;
+  utter.volume = 1.0;
 
   const voices = window.speechSynthesis.getVoices();
   const match = voices.find((v) => v.lang.startsWith(lang)) || voices.find((v) => v.lang.startsWith(lang.split("-")[0]));
   if (match) utter.voice = match;
 
   window.speechSynthesis.speak(utter);
+}
+
+async function speakViaBackend(text: string, lang: string) {
+  const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:3001/v1";
+  try {
+    const res = await fetch(`${apiBase}/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, language: lang }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.audioUrl && typeof data.audioUrl === "string" && data.audioUrl.startsWith("data:audio")) {
+      const audio = new Audio(data.audioUrl);
+      audio.volume = 1.0;
+      await audio.play();
+    }
+  } catch {
+    // Fallback to browser speech synthesis
+    speak(text, lang);
+  }
 }
 
 export function PulseDemo() {
@@ -84,7 +106,7 @@ export function PulseDemo() {
         waveTimerRef.current = setInterval(() => {
           setWaveHeights(Array.from({ length: 16 }, () => 4 + Math.round(Math.random() * 12)));
         }, 130);
-        speak(s.text, s.lang);
+        speakViaBackend(s.text, s.lang);
       } else {
         setWaveHeights(Array.from({ length: 16 }, () => 4));
         if (typeof window !== "undefined" && window.speechSynthesis) {
