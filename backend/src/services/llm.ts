@@ -1,7 +1,7 @@
 import { SYSTEM_PROMPTS } from "../agent/tools.js";
 import type { LanguageCode } from "@ndumi/shared";
 
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-flash-latest";
 const getApiKey = () => process.env.GEMINI_API_KEY || "";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
