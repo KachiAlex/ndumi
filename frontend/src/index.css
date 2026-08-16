@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background:
+      radial-gradient(ellipse 1000px 600px at 12% -8%, rgba(91, 110, 232, 0.12), transparent 60%),
+      radial-gradient(ellipse 800px 500px at 100% 6%, rgba(221, 171, 78, 0.06), transparent 55%),
+      #0a0e1c;
+    color: #f2eee3;
+  }
+
+  ::selection {
+    background: rgba(91, 110, 232, 0.16);
+    color: #f2eee3;
+  }
+
+  :focus-visible {
+    outline: 2px solid #ddab4e;
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

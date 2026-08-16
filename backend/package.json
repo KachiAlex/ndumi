@@ -1,0 +1,25 @@
+{
+  "name": "@ndumi/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ndumi/shared": "*",
+    "express": "^4.19.2",
+    "ws": "^8.18.0",
+    "uuid": "^9.0.1",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "@types/uuid": "^9.0.8",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.16.2"
+  }
+}
