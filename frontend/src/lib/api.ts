@@ -14,7 +14,12 @@ const API_BASE = import.meta.env.VITE_API_BASE || "/v1";
 const WS_BASE = import.meta.env.VITE_WS_BASE || "";
 
 function wsUrl(path: string): string {
-  if (WS_BASE) return `${WS_BASE}${path}`;
+  if (WS_BASE) {
+    if (WS_BASE.endsWith("/v1") && path.startsWith("/v1/")) {
+      return `${WS_BASE}${path.slice(3)}`;
+    }
+    return `${WS_BASE}${path}`;
+  }
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}${path}`;
 }
@@ -73,6 +78,9 @@ export class SessionStream {
 
       this.ws.onopen = () => resolve();
       this.ws.onerror = (err) => reject(err);
+      this.ws.onclose = (ev) => {
+        this.emit("_ws_close", { type: "_ws_close" as any, data: { code: ev.code, reason: ev.reason }, timestamp: Date.now() });
+      };
       this.ws.onmessage = (raw) => {
         try {
           const event: WsEvent = JSON.parse(raw.data);

@@ -88,6 +88,11 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const agentTextRef = useRef("");
+  const selectedLangRef = useRef<LanguageCode>("en");
+
+  useEffect(() => { agentTextRef.current = agentText; }, [agentText]);
+  useEffect(() => { selectedLangRef.current = selectedLang; }, [selectedLang]);
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -234,9 +239,23 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
         const data = e.data as { text: string; language: LanguageCode };
         setAgentText(data.text);
         setTranscript((prev) => [...prev, { speaker: "agent", text: data.text, lang: data.language }]);
-        // Speak the agent's response
-        speak(data.text, data.language);
-        upgradeToBackendTts(data.text, data.language);
+      });
+
+      stream.on("agent_audio_chunk", (e) => {
+        const data = e.data as { chunk: string; mimeType: string };
+        if (data.chunk) {
+          if (typeof window !== "undefined" && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+          }
+          const audio = new Audio(`data:${data.mimeType};base64,${data.chunk}`);
+          audio.volume = 1.0;
+          audio.play().catch(() => {
+            if (agentTextRef.current) speak(agentTextRef.current, selectedLangRef.current);
+          });
+        } else {
+          if (agentTextRef.current) speak(agentTextRef.current, selectedLangRef.current);
+          upgradeToBackendTts(agentTextRef.current, selectedLangRef.current);
+        }
       });
 
       stream.on("agent_thinking", () => {
@@ -246,6 +265,12 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
       stream.on("error", (e) => {
         const data = e.data as { message: string };
         setError(data.message);
+      });
+
+      stream.on("_ws_close", () => {
+        setConnected(false);
+        stopRecognition();
+        setError("Connection closed. Please rejoin.");
       });
 
       stream.on("session_end", () => {
@@ -437,29 +462,41 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
           )}
         </div>
 
-        {/* Transcript sidebar (right) */}
-        {connected && transcript.length > 0 && (
+        {/* Transcript sidebar (right) — always visible when connected */}
+        {connected && (
           <div className="absolute right-0 top-0 bottom-0 w-[340px] border-l border-line bg-[rgba(10,14,28,0.6)] backdrop-blur-sm p-4 overflow-y-auto hidden lg:block">
             <div className="font-mono text-[10px] uppercase tracking-[1px] text-text-faint mb-3">Live Transcript</div>
-            <div className="flex flex-col gap-3">
-              {transcript.map((msg, i) => (
-                <div key={i} className={`flex flex-col ${msg.speaker === "agent" ? "items-start" : "items-end"}`}>
-                  <div className="text-[9px] uppercase tracking-[0.5px] text-text-faint mb-0.5">
-                    {msg.speaker === "agent" ? "Ndumi" : "You"}
+            {transcript.length === 0 ? (
+              <div className="text-[12px] text-text-faint italic">Start speaking — your conversation will appear here.</div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {transcript.map((msg, i) => (
+                  <div key={i} className={`flex flex-col ${msg.speaker === "agent" ? "items-start" : "items-end"}`}>
+                    <div className="text-[9px] uppercase tracking-[0.5px] text-text-faint mb-0.5">
+                      {msg.speaker === "agent" ? "Ndumi" : "You"}
+                    </div>
+                    <div
+                      className={`text-[13px] leading-relaxed rounded-xl px-3 py-2 max-w-[90%] ${
+                        msg.speaker === "agent"
+                          ? "bg-indigo-dim/30 border border-indigo/20 text-text"
+                          : "bg-panel-2 border border-line text-text-dim"
+                      }`}
+                    >
+                      {msg.text}
+                    </div>
                   </div>
-                  <div
-                    className={`text-[13px] leading-relaxed rounded-xl px-3 py-2 max-w-[90%] ${
-                      msg.speaker === "agent"
-                        ? "bg-indigo-dim/30 border border-indigo/20 text-text"
-                        : "bg-panel-2 border border-line text-text-dim"
-                    }`}
-                  >
-                    {msg.text}
+                ))}
+                {partialText && (
+                  <div className="flex flex-col items-end">
+                    <div className="text-[9px] uppercase tracking-[0.5px] text-text-faint mb-0.5">You</div>
+                    <div className="text-[13px] leading-relaxed rounded-xl px-3 py-2 max-w-[90%] bg-panel-2 border border-line text-text-faint italic">
+                      {partialText}…
+                    </div>
                   </div>
-                </div>
-              ))}
-              <div ref={transcriptEndRef} />
-            </div>
+                )}
+                <div ref={transcriptEndRef} />
+              </div>
+            )}
           </div>
         )}
 
@@ -470,6 +507,44 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
           </div>
         )}
       </div>
+
+      {/* Mobile transcript (below main area) */}
+      {connected && (
+        <div className="lg:hidden border-t border-line max-h-[200px] overflow-y-auto p-4">
+          <div className="font-mono text-[10px] uppercase tracking-[1px] text-text-faint mb-2">Live Transcript</div>
+          {transcript.length === 0 ? (
+            <div className="text-[12px] text-text-faint italic">Start speaking — your conversation will appear here.</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {transcript.map((msg, i) => (
+                <div key={i} className={`flex flex-col ${msg.speaker === "agent" ? "items-start" : "items-end"}`}>
+                  <div className="text-[9px] uppercase tracking-[0.5px] text-text-faint mb-0.5">
+                    {msg.speaker === "agent" ? "Ndumi" : "You"}
+                  </div>
+                  <div
+                    className={`text-[12px] leading-relaxed rounded-xl px-3 py-2 max-w-[85%] ${
+                      msg.speaker === "agent"
+                        ? "bg-indigo-dim/30 border border-indigo/20 text-text"
+                        : "bg-panel-2 border border-line text-text-dim"
+                    }`}
+                  >
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+              {partialText && (
+                <div className="flex flex-col items-end">
+                  <div className="text-[9px] uppercase tracking-[0.5px] text-text-faint mb-0.5">You</div>
+                  <div className="text-[12px] leading-relaxed rounded-xl px-3 py-2 max-w-[85%] bg-panel-2 border border-line text-text-faint italic">
+                    {partialText}…
+                  </div>
+                </div>
+              )}
+              <div ref={transcriptEndRef} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bottom controls */}
       <div className="flex items-center justify-center gap-4 py-6 border-t border-line">
