@@ -193,7 +193,7 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
         if (data.state === "idle") {
           if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
           const textLen = agentTextRef.current.length;
-          const estimatedMs = Math.max(2000, Math.ceil(textLen / 15) * 1000);
+          const estimatedMs = Math.max(1500, Math.ceil(textLen / 25) * 1000);
           resumeTimerRef.current = setTimeout(() => {
             agentSpeakingRef.current = false;
             if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
@@ -221,6 +221,7 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
 
       stream.on("agent_text", (e) => {
         const data = e.data as { text: string; language: LanguageCode };
+        agentTextRef.current = data.text;
         setAgentText(data.text);
         setTranscript((prev) => [...prev, { speaker: "agent", text: data.text, lang: data.language }]);
       });
