@@ -65,11 +65,25 @@ export async function generateResponse(
     }
 
     const text = data.choices?.[0]?.message?.content || "";
-    return text.trim();
+    return stripMarkdown(text.trim());
   } catch (err) {
     console.error("[LLM] Groq fetch failed:", err);
     return "";
   }
+}
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/_(.+?)_/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\[(.+?)\]\(.+?\)/g, "$1")
+    .trim();
 }
 
 export function buildContextString(
