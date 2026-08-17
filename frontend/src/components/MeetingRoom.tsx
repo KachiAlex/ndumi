@@ -254,7 +254,6 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
           });
         } else {
           if (agentTextRef.current) speak(agentTextRef.current, selectedLangRef.current);
-          upgradeToBackendTts(agentTextRef.current, selectedLangRef.current);
         }
       });
 
@@ -278,9 +277,13 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
         stopRecognition();
       });
 
-      // Start listening
-      setAgentState("listening");
-      startRecognition();
+      // Start listening after welcome message finishes speaking
+      setAgentState("speaking");
+      // Recognition will start when state returns to idle/listening
+      const welcomeDelay = setTimeout(() => {
+        setAgentState("listening");
+        startRecognition();
+      }, 3000);
     } catch (e) {
       setError(`Failed to connect: ${(e as Error).message}`);
       setConnected(false);

@@ -23,6 +23,14 @@ import type {
   ToolResultData,
 } from "@ndumi/shared";
 
+const WELCOME_MESSAGES: Record<LanguageCode, string> = {
+  ig: "Nnọọ, ị byala Ndumi. Kedu ka m ga-esi nyere gị aka taa?",
+  yo: "Ẹ káàbọ̀, ẹ wọ́ sí ọ̀dọ̀ Ndumi. Bawo ni mo lè ṣe iranlọwọ fún ẹ lóní?",
+  ha: "Barka da zuwa, ka zo ga Ndumi. Ta yaya zan iya taimaka maku yau?",
+  pcm: "I dey welcome you to Ndumi. How I fit help you today?",
+  en: "Welcome, you're speaking with Ndumi. How can I help you today?",
+};
+
 function sendEvent(ws: WebSocket, type: WsEventType, data: unknown): void {
   const event: WsEvent = { type, data, timestamp: Date.now() };
   if (ws.readyState === ws.OPEN) {
@@ -56,6 +64,52 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
 
   const conversationHistory: { speaker: "customer" | "agent"; text: string }[] = [];
   let turnCount = 0;
+
+  // Send welcome message immediately on connect
+  const welcomeLang: LanguageCode = session.language || "en";
+  const welcomeText = WELCOME_MESSAGES[welcomeLang] || WELCOME_MESSAGES.en;
+
+  (async () => {
+    try {
+      setState(ws, sessionId, "speaking");
+      sessionStore.addTranscript(sessionId, {
+        speaker: "agent",
+        language: welcomeLang,
+        text: welcomeText,
+        isFinal: true,
+      });
+
+      const textData: AgentTextData = { text: welcomeText, language: welcomeLang };
+      sendEvent(ws, "agent_text", textData);
+
+      const ttsResult = await synthesizeToBase64(welcomeText, welcomeLang, {
+        responseFormat: "mp3",
+      });
+
+      if (ttsResult.base64) {
+        const audioData: AgentAudioChunkData = {
+          chunk: ttsResult.base64,
+          sequence: 0,
+          mimeType: ttsResult.mimeType,
+        };
+        sendEvent(ws, "agent_audio_chunk", audioData);
+      } else {
+        const audioData: AgentAudioChunkData = {
+          chunk: "",
+          sequence: 0,
+          mimeType: "audio/mpeg",
+        };
+        sendEvent(ws, "agent_audio_chunk", audioData);
+      }
+
+      conversationHistory.push({ speaker: "agent", text: welcomeText });
+      await redisStore.addToHistory(sessionId, "agent", welcomeText);
+      setState(ws, sessionId, "idle");
+    } catch (err) {
+      console.error("[WS] Welcome message failed:", err);
+      setState(ws, sessionId, "idle");
+    }
+  })();
 
   ws.on("message", async (raw: Buffer) => {
     let msg: { type: string; data?: Record<string, unknown> };
