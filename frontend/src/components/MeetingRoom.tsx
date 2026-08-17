@@ -174,23 +174,15 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
       stream.on("state_change", (e) => {
         const data = e.data as { state: AgentState };
         setAgentState(data.state);
-        // Pause recognition when agent is speaking or thinking
+        // Stop recognition when agent is speaking or thinking
         if (data.state === "speaking" || data.state === "thinking") {
           agentSpeakingRef.current = true;
           if (recognitionRef.current) {
             try { recognitionRef.current.stop(); } catch {}
           }
-        } else if (data.state === "listening" || data.state === "idle") {
-          agentSpeakingRef.current = false;
-          // Resume recognition after agent finishes
-          if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
-            setTimeout(() => {
-              if (!agentSpeakingRef.current && recognitionRef.current && shouldListenRef.current) {
-                try { recognitionRef.current.start(); } catch {}
-              }
-            }, 300);
-          }
         }
+        // Do NOT resume recognition on idle/listening here —
+        // that happens only after audio.onended fires
       });
 
       stream.on("language_detected", (e) => {
@@ -221,23 +213,35 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
           if (typeof window !== "undefined" && window.speechSynthesis) {
             window.speechSynthesis.cancel();
           }
+          // Ensure recognition is stopped while audio plays
+          agentSpeakingRef.current = true;
+          if (recognitionRef.current) {
+            try { recognitionRef.current.stop(); } catch {}
+          }
           const audio = new Audio(`data:${data.mimeType};base64,${data.chunk}`);
           audio.volume = 1.0;
           audio.onended = () => {
-            // Resume recognition after agent audio finishes
+            // Resume recognition only after audio finishes playing
             agentSpeakingRef.current = false;
             if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
               setTimeout(() => {
                 if (!agentSpeakingRef.current && recognitionRef.current && shouldListenRef.current) {
                   try { recognitionRef.current.start(); } catch {}
                 }
-              }, 200);
+              }, 300);
             }
           };
           audio.play().catch((err) => {
             console.warn("Audio playback failed:", err.message);
-            // Still resume recognition if audio fails
+            // Still resume recognition if audio fails to play
             agentSpeakingRef.current = false;
+            if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
+              setTimeout(() => {
+                if (recognitionRef.current && shouldListenRef.current) {
+                  try { recognitionRef.current.start(); } catch {}
+                }
+              }, 300);
+            }
           });
         }
       });

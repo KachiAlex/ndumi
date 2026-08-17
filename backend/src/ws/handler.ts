@@ -179,8 +179,10 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
           }
         }
 
-        if (!finalText) {
-          finalText = "Hello, how can I help you today?";
+        if (!finalText || !finalText.trim()) {
+          // Ignore empty transcripts — likely noise or agent echo
+          setState(ws, sessionId, "idle");
+          break;
         }
 
         sessionStore.setLanguage(sessionId, detectedLang);
