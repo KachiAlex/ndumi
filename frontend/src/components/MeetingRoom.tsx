@@ -168,8 +168,7 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
       if (interim) setPartialText(interim);
       if (final.trim()) {
         setPartialText("");
-        setTranscript((prev) => [...prev, { speaker: "customer", text: final.trim(), lang: selectedLang }]);
-        // Send to backend via WebSocket
+        // Send to backend — the final_transcript event will add it to the transcript
         if (streamRef.current?.isConnected) {
           streamRef.current.sendAudioEnd(final.trim(), selectedLang);
         }

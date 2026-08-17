@@ -69,13 +69,13 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
   const retrieved = retrieveContext(customerText, 3);
   const lowerText = customerText.toLowerCase();
 
-  // Check if any tool-related keywords match
-  if (lowerText.includes("order") || lowerText.includes("delivery") || lowerText.includes("tracking")) {
-    const orderIdMatch = customerText.match(/ORD-\d+/i);
-    const orderId = orderIdMatch?.[0] || "ORD-00000";
+  // Check if any tool-related keywords match with strong intent
+  const orderIdMatch = customerText.match(/ORD-\d+/i);
+  if (orderIdMatch && (lowerText.includes("order") || lowerText.includes("delivery") || lowerText.includes("tracking"))) {
+    const orderId = orderIdMatch[0];
     return {
       thinking: {
-        reasoning: "Customer is asking about an order. Will check order status.",
+        reasoning: "Customer is asking about a specific order. Will check order status.",
         toolsConsidered: ["check_order"],
       },
       toolCalls: [{ name: "check_order", args: { orderId } }],
@@ -87,7 +87,7 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     };
   }
 
-  if (lowerText.includes("ticket") || lowerText.includes("complaint") || lowerText.includes("issue")) {
+  if (lowerText.includes("create") && (lowerText.includes("ticket") || lowerText.includes("complaint"))) {
     return {
       thinking: {
         reasoning: "Customer wants to create a support ticket.",
@@ -102,7 +102,7 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     };
   }
 
-  if (lowerText.includes("account") || lowerText.includes("balance") || lowerText.includes("my plan")) {
+  if ((lowerText.includes("my account") || lowerText.includes("my balance") || lowerText.includes("my plan")) && lowerText.length < 100) {
     const identifier = ctx.conversationHistory.find((h) => h.speaker === "customer")?.text || "";
     return {
       thinking: {

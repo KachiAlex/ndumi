@@ -25,7 +25,7 @@ class VectorStore {
     console.log(`[VectorStore] Indexed ${this.docEmbeddings.length} documents, vocab size: ${this.embedder.size}`);
   }
 
-  search(query: string, topK = 3, threshold = 0.05): RetrievalResult[] {
+  search(query: string, topK = 3, threshold = 0.15): RetrievalResult[] {
     const queryVector = this.embedder.embed(query);
 
     const scored = this.docEmbeddings.map((emb) => {

@@ -6,9 +6,10 @@ export interface RetrievedContext {
 }
 
 export function retrieveContext(query: string, topK = 3): RetrievedContext {
-  const results = vectorStore.search(query, topK);
+  const results = vectorStore.search(query, topK, 0.25);
 
   const contextText = results
+    .filter((r) => r.document.category !== "product")
     .map((r) => `[${r.document.category.toUpperCase()}] ${r.document.title}\n${r.document.content}`)
     .join("\n\n");
 
