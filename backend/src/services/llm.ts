@@ -1,7 +1,7 @@
 import { SYSTEM_PROMPTS } from "../agent/tools.js";
 import type { LanguageCode } from "@ndumi/shared";
 
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "openai/gpt-oss-20b";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const getApiKey = () => process.env.GROQ_API_KEY || "";
 
