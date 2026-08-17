@@ -1,112 +1,82 @@
 import { SYSTEM_PROMPTS } from "../agent/tools.js";
 import type { LanguageCode } from "@ndumi/shared";
 
-const GEMINI_MODEL = "gemini-flash-latest";
-const getApiKey = () => process.env.GEMINI_API_KEY || "";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const getApiKey = () => process.env.GROQ_API_KEY || "";
 
-function getBaseUrl(): string {
-  const proxyUrl = process.env.GEMINI_PROXY_URL;
-  if (proxyUrl) {
-    return proxyUrl;
-  }
-  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+interface GroqMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
 }
 
-interface GeminiPart {
-  text: string;
-}
-
-interface GeminiContent {
-  role: "user" | "model";
-  parts: GeminiPart[];
-}
-
-interface GeminiResponse {
-  candidates?: Array<{
-    content: { parts: GeminiPart[]; role: string };
-    finishReason: string;
+interface GroqResponse {
+  choices?: Array<{
+    message: { role: string; content: string };
+    finish_reason: string;
   }>;
   error?: { message: string };
-}
-
-export interface LlmResult {
-  text: string;
-  toolCalls: { name: string; args: Record<string, unknown> }[];
-  finishReason: string;
 }
 
 export async function generateResponse(
   systemPrompt: string,
   conversationHistory: { speaker: "customer" | "agent"; text: string }[],
   customerText: string,
-  retrievedContext?: string,
+  _retrievedContext?: string,
 ): Promise<string> {
   const apiKey = getApiKey();
   if (!apiKey) {
-    console.warn("[LLM] No GEMINI_API_KEY set, falling back to rule-based response");
+    console.warn("[LLM] No GROQ_API_KEY set, falling back to rule-based response");
     return "";
   }
 
-  const contents: GeminiContent[] = conversationHistory.map((h) => ({
-    role: h.speaker === "customer" ? "user" : "model",
-    parts: [{ text: h.text }],
-  }));
-
-  contents.push({ role: "user", parts: [{ text: customerText }] });
-
-  const fullSystemPrompt = retrievedContext
-    ? `${systemPrompt}\n\nRelevant knowledge context:\n${retrievedContext}`
-    : systemPrompt;
+  const messages: GroqMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...conversationHistory.map((h) => ({
+      role: (h.speaker === "customer" ? "user" : "assistant") as GroqMessage["role"],
+      content: h.text,
+    })),
+    { role: "user", content: customerText },
+  ];
 
   const body = {
-    contents,
-    systemInstruction: { parts: [{ text: fullSystemPrompt }] },
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 512,
-      topP: 0.95,
-    },
+    model: GROQ_MODEL,
+    messages,
+    temperature: 0.7,
+    max_tokens: 512,
+    top_p: 0.95,
   };
 
   try {
-    const baseUrl = getBaseUrl();
-    const isProxy = !!process.env.GEMINI_PROXY_URL;
-    const targetUrl = isProxy
-      ? `${baseUrl}?model=${GEMINI_MODEL}`
-      : `${baseUrl}?key=${apiKey}`;
-
-    const res = await fetch(targetUrl, {
+    const res = await fetch(GROQ_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify(body),
     });
 
-    const data = (await res.json()) as GeminiResponse;
+    const data = (await res.json()) as GroqResponse;
 
     if (data.error) {
-      console.error("[LLM] Gemini error:", data.error.message);
+      console.error("[LLM] Groq error:", data.error.message);
       return "";
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const text = data.choices?.[0]?.message?.content || "";
     return text.trim();
   } catch (err) {
-    console.error("[LLM] Gemini fetch failed:", err);
+    console.error("[LLM] Groq fetch failed:", err);
     return "";
   }
 }
 
 export function buildContextString(
   _language: LanguageCode,
-  retrievedContext?: { results: Array<{ document: { title: string; content: string }; score: number }> },
+  _retrievedContext?: { results: Array<{ document: { title: string; content: string }; score: number }> },
 ): string {
-  if (!retrievedContext || retrievedContext.results.length === 0) return "";
-  const topDocs = retrievedContext.results
-    .filter((r) => r.score > 0.1)
-    .slice(0, 3)
-    .map((r) => `${r.document.title}: ${r.document.content}`)
-    .join("\n\n");
-  return topDocs || "";
+  return "";
 }
 
 export function getSystemPrompt(lang: LanguageCode): string {
