@@ -146,9 +146,9 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
     };
 
     try {
+      recognitionRef.current = recognition;
       if (!shouldListenRef.current || agentSpeakingRef.current) return;
       recognition.start();
-      recognitionRef.current = recognition;
     } catch (e) {
       console.warn("Recognition start error:", e);
     }
@@ -225,8 +225,8 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
             agentSpeakingRef.current = false;
             if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
               setTimeout(() => {
-                if (!agentSpeakingRef.current && recognitionRef.current && shouldListenRef.current) {
-                  try { recognitionRef.current.start(); } catch {}
+                if (!agentSpeakingRef.current && shouldListenRef.current) {
+                  startRecognition();
                 }
               }, 300);
             }
@@ -237,8 +237,8 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
             agentSpeakingRef.current = false;
             if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
               setTimeout(() => {
-                if (recognitionRef.current && shouldListenRef.current) {
-                  try { recognitionRef.current.start(); } catch {}
+                if (shouldListenRef.current) {
+                  startRecognition();
                 }
               }, 300);
             }
@@ -271,6 +271,8 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
       setAgentState("speaking");
       agentSpeakingRef.current = true;
       shouldListenRef.current = true;
+      // Create recognition object now (won't start until agentSpeakingRef is false)
+      startRecognition();
     } catch (e) {
       setError(`Failed to connect: ${(e as Error).message}`);
       setConnected(false);
