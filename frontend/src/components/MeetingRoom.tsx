@@ -47,6 +47,7 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
   const selectedLangRef = useRef<LanguageCode>("en");
   const agentSpeakingRef = useRef(false);
   const shouldListenRef = useRef(false);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { agentTextRef.current = agentText; }, [agentText]);
   useEffect(() => { selectedLangRef.current = selectedLang; }, [selectedLang]);
@@ -186,8 +187,20 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
             try { recognitionRef.current.stop(); } catch {}
           }
         }
-        // Do NOT resume recognition on idle/listening here —
-        // that happens only after audio.onended fires
+        // When backend signals idle, the audio chunk has been sent.
+        // Estimate playback time from agent text length (~15 chars/sec)
+        // and resume recognition after that delay.
+        if (data.state === "idle") {
+          if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+          const textLen = agentTextRef.current.length;
+          const estimatedMs = Math.max(2000, Math.ceil(textLen / 15) * 1000);
+          resumeTimerRef.current = setTimeout(() => {
+            agentSpeakingRef.current = false;
+            if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
+              startRecognition();
+            }
+          }, estimatedMs);
+        }
       });
 
       stream.on("language_detected", (e) => {
@@ -214,44 +227,26 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
 
       stream.on("agent_audio_chunk", (e) => {
         const data = e.data as { chunk: string; mimeType: string };
-        if (!data.chunk) {
-          // Empty chunk (TTS failed) — resume recognition immediately
-          agentSpeakingRef.current = false;
-          if (streamRef.current?.isConnected && shouldListenRef.current) {
-            setTimeout(() => startRecognition(), 300);
-          }
-          return;
-        }
+        if (!data.chunk) return;
         if (typeof window !== "undefined" && window.speechSynthesis) {
           window.speechSynthesis.cancel();
         }
-        // Ensure recognition is stopped while audio plays
         agentSpeakingRef.current = true;
         if (recognitionRef.current) {
           try { recognitionRef.current.stop(); } catch {}
         }
         const audio = new Audio(`data:${data.mimeType};base64,${data.chunk}`);
         audio.volume = 1.0;
-        let resumed = false;
-        const resumeRecognition = () => {
-          if (resumed) return;
-          resumed = true;
+        audio.onended = () => {
+          // Fast path: resume recognition immediately when audio ends
+          if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
           agentSpeakingRef.current = false;
-          if (streamRef.current?.isConnected && shouldListenRef.current) {
-            setTimeout(() => {
-              if (!agentSpeakingRef.current && shouldListenRef.current) {
-                startRecognition();
-              }
-            }, 300);
+          if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
+            setTimeout(() => startRecognition(), 300);
           }
         };
-        audio.onended = resumeRecognition;
-        audio.play().then(() => {
-          // Fallback: if onended doesn't fire within 30s, resume anyway
-          setTimeout(resumeRecognition, 30000);
-        }).catch((err) => {
+        audio.play().catch((err) => {
           console.warn("Audio playback failed:", err.message);
-          resumeRecognition();
         });
       });
 
@@ -290,6 +285,7 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
 
   const disconnect = useCallback(() => {
     stopRecognition();
+    if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
     agentSpeakingRef.current = false;
     shouldListenRef.current = false;
     if (streamRef.current) {
