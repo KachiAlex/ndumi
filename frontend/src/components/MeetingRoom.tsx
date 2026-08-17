@@ -18,51 +18,6 @@ const BCP47: Record<string, string> = {
   en: "en-NG",
 };
 
-function findNigerianVoice(lang: string): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined" || !window.speechSynthesis) return null;
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices.length) return null;
-  const langPrefix = lang.split("-")[0];
-  const ngMatch = voices.find((v) => v.lang.toLowerCase().includes("ng") && v.lang.toLowerCase().startsWith(langPrefix));
-  if (ngMatch) return ngMatch;
-  if (langPrefix === "en") {
-    const gbMatch = voices.find((v) => v.lang.toLowerCase().startsWith("en-gb"));
-    if (gbMatch) return gbMatch;
-  }
-  const langMatch = voices.find((v) => v.lang.toLowerCase().startsWith(langPrefix));
-  if (langMatch) return langMatch;
-  return voices[0];
-}
-
-function speak(text: string, lang: string) {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = BCP47[lang] || "en-NG";
-  utter.rate = 0.92;
-  utter.pitch = 1.0;
-  utter.volume = 1.0;
-  const voice = findNigerianVoice(lang);
-  if (voice) utter.voice = voice;
-  window.speechSynthesis.speak(utter);
-}
-
-async function upgradeToBackendTts(text: string, lang: string) {
-  try {
-    const data = await api.tts({ text, language: lang as LanguageCode });
-    if (data.audioUrl && data.audioUrl.startsWith("data:audio")) {
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-      const audio = new Audio(data.audioUrl);
-      audio.volume = 1.0;
-      await audio.play();
-    }
-  } catch {
-    // Browser TTS already playing
-  }
-}
-
 interface TranscriptMsg {
   speaker: "customer" | "agent";
   text: string;
@@ -90,6 +45,8 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const agentTextRef = useRef("");
   const selectedLangRef = useRef<LanguageCode>("en");
+  const agentSpeakingRef = useRef(false);
+  const shouldListenRef = useRef(false);
 
   useEffect(() => { agentTextRef.current = agentText; }, [agentText]);
   useEffect(() => { selectedLangRef.current = selectedLang; }, [selectedLang]);
@@ -182,13 +139,14 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
     };
 
     recognition.onend = () => {
-      // Auto-restart if still connected and not muted
-      if (streamRef.current?.isConnected && !muted) {
+      // Auto-restart only if still connected, not muted, and agent is not speaking
+      if (streamRef.current?.isConnected && !muted && !agentSpeakingRef.current && shouldListenRef.current) {
         try { recognition.start(); } catch {}
       }
     };
 
     try {
+      if (!shouldListenRef.current || agentSpeakingRef.current) return;
       recognition.start();
       recognitionRef.current = recognition;
     } catch (e) {
@@ -216,6 +174,23 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
       stream.on("state_change", (e) => {
         const data = e.data as { state: AgentState };
         setAgentState(data.state);
+        // Pause recognition when agent is speaking or thinking
+        if (data.state === "speaking" || data.state === "thinking") {
+          agentSpeakingRef.current = true;
+          if (recognitionRef.current) {
+            try { recognitionRef.current.stop(); } catch {}
+          }
+        } else if (data.state === "listening" || data.state === "idle") {
+          agentSpeakingRef.current = false;
+          // Resume recognition after agent finishes
+          if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
+            setTimeout(() => {
+              if (!agentSpeakingRef.current && recognitionRef.current && shouldListenRef.current) {
+                try { recognitionRef.current.start(); } catch {}
+              }
+            }, 300);
+          }
+        }
       });
 
       stream.on("language_detected", (e) => {
@@ -248,8 +223,21 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
           }
           const audio = new Audio(`data:${data.mimeType};base64,${data.chunk}`);
           audio.volume = 1.0;
+          audio.onended = () => {
+            // Resume recognition after agent audio finishes
+            agentSpeakingRef.current = false;
+            if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
+              setTimeout(() => {
+                if (!agentSpeakingRef.current && recognitionRef.current && shouldListenRef.current) {
+                  try { recognitionRef.current.start(); } catch {}
+                }
+              }, 200);
+            }
+          };
           audio.play().catch((err) => {
             console.warn("Audio playback failed:", err.message);
+            // Still resume recognition if audio fails
+            agentSpeakingRef.current = false;
           });
         }
       });
@@ -274,13 +262,11 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
         stopRecognition();
       });
 
-      // Start listening after welcome message finishes speaking
+      // Start listening after welcome message audio finishes playing
+      // The agent_audio_chunk handler will resume recognition when audio ends
       setAgentState("speaking");
-      // Recognition will start when state returns to idle/listening
-      const welcomeDelay = setTimeout(() => {
-        setAgentState("listening");
-        startRecognition();
-      }, 3000);
+      agentSpeakingRef.current = true;
+      shouldListenRef.current = true;
     } catch (e) {
       setError(`Failed to connect: ${(e as Error).message}`);
       setConnected(false);
@@ -291,6 +277,8 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
 
   const disconnect = useCallback(() => {
     stopRecognition();
+    agentSpeakingRef.current = false;
+    shouldListenRef.current = false;
     if (streamRef.current) {
       streamRef.current.endSession();
       streamRef.current.close();

@@ -87,11 +87,11 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
 
   return {
     thinking: {
-      reasoning: "LLM unavailable — responding with greeting.",
+      reasoning: "LLM unavailable — asking user to repeat.",
       toolsConsidered: [],
     },
     toolCalls: [],
-    responseText: generateGreeting(ctx.language),
+    responseText: "I didn't quite catch that. Could you say that again, please?",
     responseLanguage: ctx.language,
     newStatus: "responding",
     escalate: false,
@@ -131,17 +131,6 @@ export async function act(
   }
 
   return { results, finalResponseText, finalStatus };
-}
-
-function generateGreeting(lang: LanguageCode): string {
-  const greetings: Record<LanguageCode, string> = {
-    ig: "Nnọọ! Kedu ihe ị chọrọ ka m mee?",
-    yo: "Ẹ káàbọ̀! Mo ti gbọ́, ẹ jọ̀wọ́ ẹ sọ ohun tí ẹ nílò.",
-    ha: "Barka da zuwa! Na ji ka, don Allah gaya mini abin da kake bukata.",
-    pcm: "I dey here o. Talk wetin dey worry you make we sort am.",
-    en: "Hi there, I heard you — go ahead and tell me what you need.",
-  };
-  return greetings[lang];
 }
 
 function formatToolResponse(result: ToolResult, _lang: LanguageCode): string {
