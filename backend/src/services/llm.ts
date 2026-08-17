@@ -63,7 +63,7 @@ export async function generateResponse(
     systemInstruction: { parts: [{ text: fullSystemPrompt }] },
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 256,
+      maxOutputTokens: 512,
       topP: 0.95,
     },
   };

@@ -9,8 +9,7 @@ import { checkGuardrails, shouldEscalate } from "./guardrails.js";
 import { GUARDRAILS } from "./tools.js";
 import { canTransition } from "./stateMachine.js";
 import type { SessionStatus } from "@ndumi/shared";
-import { retrieveContext, type RetrievedContext } from "../knowledge/index.js";
-import { generateResponse, buildContextString, getSystemPrompt } from "../services/llm.js";
+import { generateResponse, getSystemPrompt } from "../services/llm.js";
 
 export interface AgentContext {
   sessionId: string;
@@ -27,7 +26,6 @@ export interface AgentDecision {
   responseLanguage: LanguageCode;
   newStatus: SessionStatus;
   escalate: boolean;
-  retrievedContext?: RetrievedContext;
 }
 
 export async function reason(ctx: AgentContext, customerText: string): Promise<AgentDecision> {
@@ -65,75 +63,18 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     };
   }
 
-  // Retrieve relevant knowledge for this query
-  const retrieved = retrieveContext(customerText, 3);
-  const lowerText = customerText.toLowerCase();
-
-  // Check if any tool-related keywords match with strong intent
-  const orderIdMatch = customerText.match(/ORD-\d+/i);
-  if (orderIdMatch && (lowerText.includes("order") || lowerText.includes("delivery") || lowerText.includes("tracking"))) {
-    const orderId = orderIdMatch[0];
-    return {
-      thinking: {
-        reasoning: "Customer is asking about a specific order. Will check order status.",
-        toolsConsidered: ["check_order"],
-      },
-      toolCalls: [{ name: "check_order", args: { orderId } }],
-      responseText: `Let me check on order ${orderId} for you.`,
-      responseLanguage: ctx.language,
-      newStatus: "awaiting_tool",
-      escalate: false,
-      retrievedContext: retrieved,
-    };
-  }
-
-  if (lowerText.includes("create") && (lowerText.includes("ticket") || lowerText.includes("complaint"))) {
-    return {
-      thinking: {
-        reasoning: "Customer wants to create a support ticket.",
-        toolsConsidered: ["create_ticket"],
-      },
-      toolCalls: [{ name: "create_ticket", args: { subject: customerText.slice(0, 80), priority: "medium" } }],
-      responseText: "I'll create a support ticket for this issue.",
-      responseLanguage: ctx.language,
-      newStatus: "awaiting_tool",
-      escalate: false,
-      retrievedContext: retrieved,
-    };
-  }
-
-  if ((lowerText.includes("my account") || lowerText.includes("my balance") || lowerText.includes("my plan")) && lowerText.length < 100) {
-    const identifier = ctx.conversationHistory.find((h) => h.speaker === "customer")?.text || "";
-    return {
-      thinking: {
-        reasoning: "Customer is asking about their account. Will look up account details.",
-        toolsConsidered: ["get_account"],
-      },
-      toolCalls: [{ name: "get_account", args: { identifier } }],
-      responseText: "Let me pull up your account details.",
-      responseLanguage: ctx.language,
-      newStatus: "awaiting_tool",
-      escalate: false,
-      retrievedContext: retrieved,
-    };
-  }
-
-  // No tool needed — use Gemini LLM with RAG context for response
-  const contextString = buildContextString(ctx.language, retrieved);
+  // No specific context — use Gemini for natural conversation
   const systemPrompt = getSystemPrompt(ctx.language);
   const llmResponse = await generateResponse(
     systemPrompt,
     ctx.conversationHistory,
     customerText,
-    contextString,
   );
 
   if (llmResponse) {
     return {
       thinking: {
-        reasoning: contextString
-          ? `Used Gemini with RAG context (${retrieved.results.length} docs retrieved).`
-          : "Used Gemini to generate a conversational response.",
+        reasoning: "Used Gemini to generate a conversational response.",
         toolsConsidered: [],
       },
       toolCalls: [],
@@ -141,30 +82,12 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
       responseLanguage: ctx.language,
       newStatus: "responding",
       escalate: false,
-      retrievedContext: retrieved,
-    };
-  }
-
-  // Fallback: use retrieved knowledge directly if LLM is unavailable
-  if (retrieved.results.length > 0 && retrieved.results[0].score > 0.1) {
-    const topDoc = retrieved.results[0].document;
-    return {
-      thinking: {
-        reasoning: `LLM unavailable. Retrieved relevant knowledge: "${topDoc.title}" (score: ${retrieved.results[0].score.toFixed(3)}). Using it to answer.`,
-        toolsConsidered: [],
-      },
-      toolCalls: [],
-      responseText: topDoc.content,
-      responseLanguage: ctx.language,
-      newStatus: "responding",
-      escalate: false,
-      retrievedContext: retrieved,
     };
   }
 
   return {
     thinking: {
-      reasoning: "LLM and RAG unavailable — responding with greeting.",
+      reasoning: "LLM unavailable — responding with greeting.",
       toolsConsidered: [],
     },
     toolCalls: [],
@@ -172,7 +95,6 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     responseLanguage: ctx.language,
     newStatus: "responding",
     escalate: false,
-    retrievedContext: retrieved,
   };
 }
 
