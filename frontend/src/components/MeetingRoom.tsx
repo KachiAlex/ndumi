@@ -248,11 +248,9 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
           }
           const audio = new Audio(`data:${data.mimeType};base64,${data.chunk}`);
           audio.volume = 1.0;
-          audio.play().catch(() => {
-            if (agentTextRef.current) speak(agentTextRef.current, selectedLangRef.current);
+          audio.play().catch((err) => {
+            console.warn("Audio playback failed:", err.message);
           });
-        } else {
-          if (agentTextRef.current) speak(agentTextRef.current, selectedLangRef.current);
         }
       });
 

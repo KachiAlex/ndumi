@@ -99,6 +99,8 @@ async function synthesizeFishAudio(
   const apiKey = getFishAudioKey();
   if (!apiKey) throw new Error("No FISH_AUDIO_API_KEY");
 
+  const MALE_NIGERIAN_VOICE = "0d3dde577c164738857eb6272ce853c2";
+
   const res = await fetch(FISH_AUDIO_BASE_URL, {
     method: "POST",
     headers: {
@@ -106,7 +108,11 @@ async function synthesizeFishAudio(
       Authorization: `Bearer ${apiKey}`,
       model: "s2.1-pro-free",
     },
-    body: JSON.stringify({ text, format: "mp3" }),
+    body: JSON.stringify({
+      text,
+      format: "mp3",
+      reference_id: MALE_NIGERIAN_VOICE,
+    }),
     signal: AbortSignal.timeout(30000),
   });
 
