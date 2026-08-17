@@ -146,6 +146,11 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
     };
 
     try {
+      // If recognition is already running, don't create a new one
+      if (recognitionRef.current) {
+        try { recognitionRef.current.start(); } catch {}
+        return;
+      }
       recognitionRef.current = recognition;
       if (!shouldListenRef.current || agentSpeakingRef.current) return;
       recognition.start();
@@ -209,41 +214,45 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
 
       stream.on("agent_audio_chunk", (e) => {
         const data = e.data as { chunk: string; mimeType: string };
-        if (data.chunk) {
-          if (typeof window !== "undefined" && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
+        if (!data.chunk) {
+          // Empty chunk (TTS failed) — resume recognition immediately
+          agentSpeakingRef.current = false;
+          if (streamRef.current?.isConnected && shouldListenRef.current) {
+            setTimeout(() => startRecognition(), 300);
           }
-          // Ensure recognition is stopped while audio plays
-          agentSpeakingRef.current = true;
-          if (recognitionRef.current) {
-            try { recognitionRef.current.stop(); } catch {}
-          }
-          const audio = new Audio(`data:${data.mimeType};base64,${data.chunk}`);
-          audio.volume = 1.0;
-          audio.onended = () => {
-            // Resume recognition only after audio finishes playing
-            agentSpeakingRef.current = false;
-            if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
-              setTimeout(() => {
-                if (!agentSpeakingRef.current && shouldListenRef.current) {
-                  startRecognition();
-                }
-              }, 300);
-            }
-          };
-          audio.play().catch((err) => {
-            console.warn("Audio playback failed:", err.message);
-            // Still resume recognition if audio fails to play
-            agentSpeakingRef.current = false;
-            if (streamRef.current?.isConnected && !muted && shouldListenRef.current) {
-              setTimeout(() => {
-                if (shouldListenRef.current) {
-                  startRecognition();
-                }
-              }, 300);
-            }
-          });
+          return;
         }
+        if (typeof window !== "undefined" && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+        // Ensure recognition is stopped while audio plays
+        agentSpeakingRef.current = true;
+        if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch {}
+        }
+        const audio = new Audio(`data:${data.mimeType};base64,${data.chunk}`);
+        audio.volume = 1.0;
+        let resumed = false;
+        const resumeRecognition = () => {
+          if (resumed) return;
+          resumed = true;
+          agentSpeakingRef.current = false;
+          if (streamRef.current?.isConnected && shouldListenRef.current) {
+            setTimeout(() => {
+              if (!agentSpeakingRef.current && shouldListenRef.current) {
+                startRecognition();
+              }
+            }, 300);
+          }
+        };
+        audio.onended = resumeRecognition;
+        audio.play().then(() => {
+          // Fallback: if onended doesn't fire within 30s, resume anyway
+          setTimeout(resumeRecognition, 30000);
+        }).catch((err) => {
+          console.warn("Audio playback failed:", err.message);
+          resumeRecognition();
+        });
       });
 
       stream.on("agent_thinking", () => {
@@ -271,8 +280,6 @@ export function MeetingRoom({ onLeave }: { onLeave: () => void }) {
       setAgentState("speaking");
       agentSpeakingRef.current = true;
       shouldListenRef.current = true;
-      // Create recognition object now (won't start until agentSpeakingRef is false)
-      startRecognition();
     } catch (e) {
       setError(`Failed to connect: ${(e as Error).message}`);
       setConnected(false);
