@@ -21,14 +21,22 @@ const PORT = parseInt(process.env.PORT || "3001", 10);
 
 app.use(express.json({ limit: "10mb" }));
 const allowedOrigins = (process.env.CORS_ORIGIN || "*").split(",").map((s) => s.trim());
+const wildcard = allowedOrigins.includes("*");
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
-    }
+    // Allow same-origin/no-origin requests (curl, server-to-server, etc.)
+    if (!origin) return callback(null, true);
+    if (wildcard) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Deny silently: no headers are set, browser blocks the response.
+    // We do NOT throw — throwing produces a headerless 500 that looks
+    // exactly like a CORS failure in the browser console.
+    callback(null, false);
   },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+  credentials: false,
+  optionsSuccessStatus: 204,
 }));
 
 app.get("/health", async (_req, res) => {
@@ -56,6 +64,16 @@ wss.on("connection", (ws, req) => {
     handleSessionWs(ws, req);
   } else {
     ws.close(1008, "Unknown WebSocket path");
+  }
+});
+
+// JSON error handler — keeps responses parseable for the frontend and
+// ensures we never leak a headerless HTML 500 that mimics a CORS failure.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const message = err instanceof Error ? err.message : "Internal server error";
+  console.error("[ERROR]", message);
+  if (!res.headersSent) {
+    res.status(500).json({ error: message });
   }
 });
 
