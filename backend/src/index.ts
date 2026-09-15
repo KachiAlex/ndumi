@@ -3,7 +3,15 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: join(__dirname, "..", ".env") });
+// Resolve .env from cwd (works when started from backend/ dir, e.g. pm2)
+// or relative to source (dev: src/../.env, prod: dist/backend/src/../../.env)
+config({
+  path: [
+    join(process.cwd(), ".env"),
+    join(__dirname, "..", ".env"),
+    join(__dirname, "..", "..", "..", ".env"),
+  ],
+});
 
 import express from "express";
 import http from "http";
