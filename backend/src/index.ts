@@ -23,6 +23,7 @@ import { sessionsRouter } from "./routes/sessions.js";
 import { ttsRouter } from "./routes/tts.js";
 import { handoffRouter } from "./routes/handoff.js";
 import { handleSessionWs } from "./ws/handler.js";
+import { auditLogger } from "./agent/auditLog.js";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -61,6 +62,16 @@ app.get("/health", async (_req, res) => {
 app.use("/v1/sessions", sessionsRouter);
 app.use("/v1/tts", ttsRouter);
 app.use("/v1/handoff", handoffRouter);
+
+// Audit log endpoint — returns recent tool call audit entries
+app.get("/v1/audit", (_req, res) => {
+  const limit = parseInt((_req.query.limit as string) || "50", 10);
+  res.json({ entries: auditLogger.getRecent(limit) });
+});
+
+app.get("/v1/audit/:sessionId", (req, res) => {
+  res.json({ entries: auditLogger.getEntries(req.params.sessionId) });
+});
 
 const server = http.createServer(app);
 

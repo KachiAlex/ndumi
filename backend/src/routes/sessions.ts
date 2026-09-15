@@ -1,12 +1,21 @@
 import { Router } from "express";
 import { sessionStore } from "../sessionStore.js";
+import { listTenants } from "../agent/tenantConfig.js";
 import type { CreateSessionRequest, CreateSessionResponse, GetTranscriptResponse } from "@ndumi/shared";
 
 export const sessionsRouter = Router();
 
+/** Resolve tenant ID from request: header > query > default "banking". */
+function resolveTenant(req: { headers: Record<string, string | string[] | undefined> }): string {
+  const headerTenant = req.headers["x-tenant-id"] as string | undefined;
+  if (headerTenant && listTenants().includes(headerTenant)) return headerTenant;
+  return "banking";
+}
+
 sessionsRouter.post("/", (req, res) => {
   const body = (req.body ?? {}) as CreateSessionRequest;
-  const session = sessionStore.create({ language: body.language });
+  const tenantId = resolveTenant(req);
+  const session = sessionStore.create({ language: body.language, tenantId });
   const response: CreateSessionResponse = { session };
   res.status(201).json(response);
 });

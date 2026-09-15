@@ -8,9 +8,10 @@ import type {
 } from "@ndumi/shared";
 import { DESTRUCTIVE_TOOLS, AUTH_REQUIRED_TOOLS } from "@ndumi/shared";
 import { executeToolWithRetry } from "./executor.js";
-import { checkGuardrails, shouldEscalate, isAffirmative, isNegative } from "./guardrails.js";
-import { GUARDRAILS, TOOL_SCHEMAS } from "./tools.js";
-import { generateDecision, generateResponseFromToolResults, getSystemPrompt } from "../services/llm.js";
+import { checkStructuralGuardrails, classifyIntent, shouldEscalate, isAffirmative, isNegative } from "./guardrails.js";
+import { TOOL_SCHEMAS } from "./tools.js";
+import { getTenant, type TenantConfig } from "./tenantConfig.js";
+import { generateDecision, generateResponseFromToolResults } from "../services/llm.js";
 import { nairaToWords } from "./n2w.js";
 import { lookupCustomer, verifyPin, extractPhoneNumber, extractPin } from "./customerStore.js";
 
@@ -31,6 +32,8 @@ export interface AgentContext {
   customerId: string | null;
   /** Timestamp of last activity. */
   lastActivityAt: number;
+  /** Tenant ID for multi-industry support. */
+  tenantId: string;
 }
 
 export interface AgentStep {
@@ -85,20 +88,21 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     return handleAuth(ctx, customerText);
   }
 
-  // ── 3. Guardrail check ──────────────────────────────────────────────
-  const guardrail = checkGuardrails({
+  // ── 3. Guardrail check (structural + LLM-based intent classification) ──
+  const tenant = getTenant(ctx.tenantId);
+  const structuralGuardrail = checkStructuralGuardrails({
     turnCount: ctx.turnCount,
     toolCallsThisTurn: ctx.toolCallsThisTurn,
-    customerText,
+    guardrails: tenant.guardrails,
   });
 
-  if (!guardrail.passed) {
+  if (!structuralGuardrail.passed) {
     return {
       thinking: {
-        reasoning: guardrail.reason || "Guardrail triggered",
+        reasoning: structuralGuardrail.reason || "Guardrail triggered",
         toolsConsidered: ["escalate_to_human"],
       },
-      toolCalls: [{ name: "escalate_to_human", args: { reason: guardrail.reason } }],
+      toolCalls: [{ name: "escalate_to_human", args: { reason: structuralGuardrail.reason } }],
       toolResults: [],
       responseText: "I'll connect you with a human agent who can help further.",
       responseLanguage: ctx.language,
@@ -108,13 +112,31 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     };
   }
 
-  if (shouldEscalate(customerText)) {
+  // LLM-based intent classification (replaces substring matching)
+  const intent = await classifyIntent(customerText, tenant.guardrails);
+  if (intent.category === "out_of_scope") {
     return {
       thinking: {
-        reasoning: "Customer requested human agent. Escalating.",
+        reasoning: intent.reason || "Customer request is out of scope.",
         toolsConsidered: ["escalate_to_human"],
       },
-      toolCalls: [{ name: "escalate_to_human", args: { reason: "Customer requested human agent" } }],
+      toolCalls: [{ name: "escalate_to_human", args: { reason: intent.reason } }],
+      toolResults: [],
+      responseText: "I'm not able to help with that topic, but I can connect you with a human agent who may be able to assist.",
+      responseLanguage: ctx.language,
+      newStatus: "escalated",
+      touchActivity: true,
+      escalate: true,
+    };
+  }
+
+  if (intent.category === "escalate" || shouldEscalate(customerText)) {
+    return {
+      thinking: {
+        reasoning: intent.reason || "Customer requested escalation.",
+        toolsConsidered: ["escalate_to_human"],
+      },
+      toolCalls: [{ name: "escalate_to_human", args: { reason: intent.reason || "Customer requested human agent" } }],
       toolResults: [],
       responseText: "I understand. Let me connect you with a human agent right away.",
       responseLanguage: ctx.language,
@@ -125,8 +147,11 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
   }
 
   // ── 4. LLM decides: call tools or respond directly ──────────────────
-  const systemPrompt = getSystemPrompt(ctx.language);
-  const tools = Object.values(TOOL_SCHEMAS);
+  const systemPrompt = tenant.systemPrompts[ctx.language] || tenant.systemPrompts.en;
+  // Filter tools to only those enabled for this tenant
+  const tools = Object.values(TOOL_SCHEMAS).filter((t) =>
+    tenant.enabledTools.includes(t.function.name),
+  );
   const decision = await generateDecision(systemPrompt, ctx.conversationHistory, customerText, tools);
 
   if (decision.type === "text") {
@@ -146,7 +171,7 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
   }
 
   // ── 5. LLM wants to call tools ──────────────────────────────────────
-  const toolCalls = decision.calls.slice(0, GUARDRAILS.maxToolCallsPerTurn - ctx.toolCallsThisTurn);
+  const toolCalls = decision.calls.slice(0, tenant.guardrails.maxToolCallsPerTurn - ctx.toolCallsThisTurn);
 
   // Inject customerId into auth-required tool calls
   const enrichedCalls = toolCalls.map((tc) => {
@@ -156,9 +181,25 @@ export async function reason(ctx: AgentContext, customerText: string): Promise<A
     return tc;
   });
 
-  // Check if any are destructive — if so, ask for confirmation first
+  // Enforce transaction limits before asking for confirmation
   const destructiveCall = enrichedCalls.find((tc) => DESTRUCTIVE_TOOLS.includes(tc.name));
   if (destructiveCall) {
+    const limitError = checkTransactionLimit(destructiveCall, tenant);
+    if (limitError) {
+      return {
+        thinking: {
+          reasoning: limitError,
+          toolsConsidered: enrichedCalls.map((tc) => tc.name),
+        },
+        toolCalls: [],
+        toolResults: [],
+        responseText: limitError,
+        responseLanguage: ctx.language,
+        newStatus: "active",
+        touchActivity: true,
+        escalate: false,
+      };
+    }
     const confirmationPrompt = buildConfirmationPrompt(destructiveCall, ctx.language);
     return {
       thinking: {
@@ -397,7 +438,8 @@ async function handleConfirmation(ctx: AgentContext, customerText: string): Prom
 
     let responseText: string;
     if (result.success) {
-      const systemPrompt = getSystemPrompt(ctx.language);
+      const tenant = getTenant(ctx.tenantId);
+      const systemPrompt = tenant.systemPrompts[ctx.language] || tenant.systemPrompts.en;
       const llmResponse = await generateResponseFromToolResults(
         systemPrompt,
         ctx.conversationHistory,
@@ -442,6 +484,24 @@ async function handleConfirmation(ctx: AgentContext, customerText: string): Prom
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
+
+/** Check if a destructive tool call exceeds the tenant's transaction limits. */
+function checkTransactionLimit(call: ToolCall, tenant: TenantConfig): string | null {
+  const limits = tenant.guardrails.transactionLimits;
+  if (!limits) return null;
+
+  const limit = limits[call.name];
+  if (limit === undefined) return null;
+
+  const amount = call.args.amount as number | undefined;
+  if (amount === undefined) return null;
+
+  if (amount > limit) {
+    return `I'm sorry, but the amount exceeds the maximum limit of ${nairaToWords(limit)} for this transaction. Please try again with a smaller amount.`;
+  }
+
+  return null;
+}
 
 function buildConfirmationPrompt(call: ToolCall, _lang: LanguageCode): string {
   const a = call.args;

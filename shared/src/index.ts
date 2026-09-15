@@ -37,6 +37,8 @@ export interface Session {
   customerId: string | null;
   /** Timestamp of last customer activity (for session timeout). */
   lastActivityAt: number;
+  /** Tenant ID for multi-industry support (e.g. "banking", "healthcare"). */
+  tenantId: string;
 }
 
 export interface TranscriptEntry {

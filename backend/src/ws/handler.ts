@@ -4,6 +4,7 @@ import { sessionStore } from "../sessionStore.js";
 import { redisStore } from "../redisStore.js";
 import { reason, act } from "../agent/index.js";
 import type { AgentContext } from "../agent/index.js";
+import { logToolCall } from "../agent/auditLog.js";
 import { transcribe } from "../services/asr.js";
 import { synthesizeToBase64 } from "../services/tts.js";
 import type {
@@ -228,6 +229,7 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
           authState: sessionRecord?.authState ?? "unauthenticated",
           customerId: sessionRecord?.customerId ?? null,
           lastActivityAt: sessionRecord?.lastActivityAt ?? Date.now(),
+          tenantId: sessionRecord?.tenantId ?? "banking",
         };
 
         const decision = await reason(ctx, finalText);
@@ -264,16 +266,33 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
         }
 
         // Execute tools (act is a passthrough now — execution happens in reason())
+        const toolStartTime = Date.now();
         const { results, finalResponseText, finalStatus } = await act(decision, ctx);
+        const toolDuration = Date.now() - toolStartTime;
 
-        for (const result of results) {
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          const call = decision.toolCalls[i];
           const resultData: ToolResultData = {
             name: result.name,
             success: result.success,
             data: result.data,
-            durationMs: 0,
+            durationMs: toolDuration,
           };
           sendEvent(ws, "tool_result", resultData);
+
+          // Audit log every tool call
+          if (call) {
+            logToolCall(
+              sessionId,
+              sessionRecord?.tenantId ?? "banking",
+              sessionRecord?.customerId ?? null,
+              detectedLang,
+              call,
+              result,
+              toolDuration,
+            );
+          }
         }
 
         // Agent responds

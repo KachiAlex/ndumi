@@ -10,7 +10,7 @@ interface SessionRecord extends Session {
 class SessionStore {
   private sessions = new Map<string, SessionRecord>();
 
-  create(opts?: { language?: LanguageCode }): Session {
+  create(opts?: { language?: LanguageCode; tenantId?: string }): Session {
     const id = randomUUID();
     const now = Date.now();
     const record: SessionRecord = {
@@ -24,6 +24,7 @@ class SessionStore {
       authState: "unauthenticated",
       customerId: null,
       lastActivityAt: now,
+      tenantId: opts?.tenantId ?? "banking",
       transcripts: [],
       endedAt: null,
       pendingAction: null,
@@ -156,6 +157,7 @@ class SessionStore {
       authState: rec.authState,
       customerId: rec.customerId,
       lastActivityAt: rec.lastActivityAt,
+      tenantId: rec.tenantId,
     };
   }
 }

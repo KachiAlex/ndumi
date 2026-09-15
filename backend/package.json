@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/backend/src/index.js",
     "typecheck": "tsc --noEmit",
-    "healthcheck": "node scripts/healthcheck.js"
+    "healthcheck": "node scripts/healthcheck.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ndumi/shared": "*",
@@ -26,6 +28,8 @@
     "@types/node": "^20.14.9",
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.5.10",
-    "tsx": "^4.16.2"
+    "tsx": "^4.16.2",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
   }
 }
