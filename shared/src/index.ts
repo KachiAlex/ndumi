@@ -2,7 +2,26 @@ export type LanguageCode = "ig" | "yo" | "ha" | "pcm" | "en";
 
 export type AgentState = "idle" | "listening" | "thinking" | "speaking";
 
-export type SessionStatus = "active" | "awaiting_tool" | "responding" | "escalated" | "resolved" | "ended";
+export type SessionStatus =
+  | "active"
+  | "awaiting_tool"
+  | "responding"
+  | "escalated"
+  | "resolved"
+  | "ended";
+
+/** Authentication state for a session. */
+export type AuthState = "unauthenticated" | "awaiting_phone" | "awaiting_pin" | "authenticated";
+
+/** Tools that require authentication before they can be called. */
+export const AUTH_REQUIRED_TOOLS: ToolName[] = [
+  "check_balance",
+  "get_transactions",
+  "make_transfer",
+  "recharge_airtime",
+  "pay_bills",
+  "get_account",
+];
 
 export interface Session {
   id: string;
@@ -12,6 +31,12 @@ export interface Session {
   state: AgentState;
   status: SessionStatus;
   wsUrl: string;
+  /** Authentication state — unauthenticated until customer verifies identity. */
+  authState: AuthState;
+  /** The verified customer ID (phone number) once authenticated. */
+  customerId: string | null;
+  /** Timestamp of last customer activity (for session timeout). */
+  lastActivityAt: number;
 }
 
 export interface TranscriptEntry {

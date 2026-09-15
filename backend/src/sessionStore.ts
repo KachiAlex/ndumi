@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Session, TranscriptEntry, LanguageCode, AgentState, SessionStatus, ToolCall } from "@ndumi/shared";
+import type { Session, TranscriptEntry, LanguageCode, AgentState, SessionStatus, ToolCall, AuthState } from "@ndumi/shared";
 
 interface SessionRecord extends Session {
   transcripts: TranscriptEntry[];
@@ -21,6 +21,9 @@ class SessionStore {
       state: "idle",
       status: "active",
       wsUrl: `/v1/sessions/${id}/stream`,
+      authState: "unauthenticated",
+      customerId: null,
+      lastActivityAt: now,
       transcripts: [],
       endedAt: null,
       pendingAction: null,
@@ -105,6 +108,34 @@ class SessionStore {
     rec.updatedAt = Date.now();
   }
 
+  setAuthState(id: string, authState: AuthState): void {
+    const rec = this.sessions.get(id);
+    if (!rec) throw new Error(`Session ${id} not found`);
+    rec.authState = authState;
+    rec.updatedAt = Date.now();
+  }
+
+  setCustomerId(id: string, customerId: string | null): void {
+    const rec = this.sessions.get(id);
+    if (!rec) throw new Error(`Session ${id} not found`);
+    rec.customerId = customerId;
+    rec.updatedAt = Date.now();
+  }
+
+  touchActivity(id: string): void {
+    const rec = this.sessions.get(id);
+    if (!rec) return;
+    rec.lastActivityAt = Date.now();
+    rec.updatedAt = Date.now();
+  }
+
+  /** Check if session has been inactive longer than the timeout (ms). */
+  isSessionExpired(id: string, timeoutMs: number): boolean {
+    const rec = this.sessions.get(id);
+    if (!rec) return true;
+    return Date.now() - rec.lastActivityAt > timeoutMs;
+  }
+
   activeCount(): number {
     let count = 0;
     for (const rec of this.sessions.values()) {
@@ -122,6 +153,9 @@ class SessionStore {
       state: rec.state,
       status: rec.status,
       wsUrl: rec.wsUrl,
+      authState: rec.authState,
+      customerId: rec.customerId,
+      lastActivityAt: rec.lastActivityAt,
     };
   }
 }

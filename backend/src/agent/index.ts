@@ -6,3 +6,4 @@ export { checkGuardrails, shouldEscalate, isAffirmative, isNegative } from "./gu
 export { reason, act } from "./orchestrator.js";
 export type { AgentContext, AgentStep } from "./orchestrator.js";
 export { nairaToWords, numberToWords } from "./n2w.js";
+export { lookupCustomer, verifyPin, extractPhoneNumber, extractPin } from "./customerStore.js";

@@ -214,6 +214,7 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
         sessionStore.updateStatus(sessionId, "responding");
 
         const pendingAction = sessionStore.getPendingAction(sessionId);
+        const sessionRecord = sessionStore.get(sessionId);
 
         const ctx: AgentContext = {
           sessionId,
@@ -224,10 +225,24 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
           pendingAction: pendingAction
             ? { toolCall: pendingAction.toolCall, confirmationPrompt: pendingAction.confirmationPrompt }
             : null,
+          authState: sessionRecord?.authState ?? "unauthenticated",
+          customerId: sessionRecord?.customerId ?? null,
+          lastActivityAt: sessionRecord?.lastActivityAt ?? Date.now(),
         };
 
         const decision = await reason(ctx, finalText);
         sendEvent(ws, "agent_thinking", decision.thinking);
+
+        // Apply auth state updates from the orchestrator
+        if (decision.newAuthState) {
+          sessionStore.setAuthState(sessionId, decision.newAuthState);
+        }
+        if (decision.newCustomerId !== undefined) {
+          sessionStore.setCustomerId(sessionId, decision.newCustomerId);
+        }
+        if (decision.touchActivity) {
+          sessionStore.touchActivity(sessionId);
+        }
 
         // If the agent proposed a destructive action, store it as pending
         if (decision.pendingConfirmation) {

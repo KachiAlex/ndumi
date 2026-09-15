@@ -1,42 +1,12 @@
 import type { ToolName, ToolResult } from "@ndumi/shared";
 import { GUARDRAILS } from "./tools.js";
-
-// ── In-memory mock banking data ────────────────────────────────────
-// In production these executors would call real banking APIs.
-// For now they return realistic mock data seeded per-session.
-
-interface MockAccount {
-  accountId: string;
-  name: string;
-  type: string;
-  balance: number;
-  currency: string;
-}
-
-interface MockTransaction {
-  id: string;
-  type: "credit" | "debit" | "airtime" | "bill";
-  description: string;
-  amount: number;
-  date: string;
-  balanceAfter: number;
-}
-
-const MOCK_ACCOUNT: MockAccount = {
-  accountId: "0123456789",
-  name: "Chiamaka Okafor",
-  type: "Savings",
-  balance: 247500,
-  currency: "NGN",
-};
-
-const MOCK_TRANSACTIONS: MockTransaction[] = [
-  { id: "TXN-001", type: "credit", description: "Salary - Acme Corp", amount: 350000, date: "2026-09-10", balanceAfter: 597500 },
-  { id: "TXN-002", type: "debit", description: "Transfer to 08012345678 (GTB)", amount: 150000, date: "2026-09-12", balanceAfter: 447500 },
-  { id: "TXN-003", type: "airtime", description: "MTN Airtime - 08012345678", amount: 2000, date: "2026-09-13", balanceAfter: 445500 },
-  { id: "TXN-004", type: "bill", description: "Ikeja Electric - Meter 044123", amount: 15000, date: "2026-09-14", balanceAfter: 430500 },
-  { id: "TXN-005", type: "debit", description: "POS Purchase - Shoprite", amount: 183000, date: "2026-09-14", balanceAfter: 247500 },
-];
+import {
+  getCustomer,
+  getCustomerTransactions,
+  recordTransaction,
+  hasSufficientBalance,
+  maskAccount,
+} from "./customerStore.js";
 
 const BANK_NAMES: Record<string, string> = {
   gtb: "Guaranty Trust Bank",
@@ -69,24 +39,33 @@ const BILLER_NAMES: Record<string, string> = {
 type ToolExecutor = (args: Record<string, unknown>) => Promise<ToolResult>;
 
 const executors: Partial<Record<ToolName, ToolExecutor>> = {
-  check_balance: async () => ({
-    name: "check_balance",
-    success: true,
-    data: {
-      accountId: maskAccount(MOCK_ACCOUNT.accountId),
-      balance: MOCK_ACCOUNT.balance,
-      currency: MOCK_ACCOUNT.currency,
-      accountType: MOCK_ACCOUNT.type,
-    },
-  }),
+  check_balance: async (args) => {
+    const customerId = args.customerId as string;
+    const customer = getCustomer(customerId);
+    if (!customer) {
+      return { name: "check_balance", success: false, data: { error: "Customer not found" } };
+    }
+    return {
+      name: "check_balance",
+      success: true,
+      data: {
+        accountId: maskAccount(customer.accountId),
+        balance: customer.balance,
+        currency: customer.currency,
+        accountType: customer.accountType,
+      },
+    };
+  },
 
   get_transactions: async (args) => {
+    const customerId = args.customerId as string;
     const limit = Math.min((args.limit as number) || 5, 20);
+    const txns = getCustomerTransactions(customerId, limit);
     return {
       name: "get_transactions",
       success: true,
       data: {
-        transactions: MOCK_TRANSACTIONS.slice(0, limit).map((t) => ({
+        transactions: txns.map((t) => ({
           id: t.id,
           type: t.type,
           description: t.description,
@@ -98,6 +77,7 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
   },
 
   make_transfer: async (args) => {
+    const customerId = args.customerId as string;
     const recipientAccount = args.recipientAccount as string;
     const bankCode = args.bankCode as string;
     const amount = args.amount as number;
@@ -109,20 +89,14 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
     if (amount > GUARDRAILS.maxTransferAmount) {
       return { name: "make_transfer", success: false, data: { error: `Amount exceeds maximum transfer limit of ₦${GUARDRAILS.maxTransferAmount.toLocaleString()}` } };
     }
-    if (amount > MOCK_ACCOUNT.balance) {
+    if (!hasSufficientBalance(customerId, amount)) {
       return { name: "make_transfer", success: false, data: { error: "Insufficient balance for this transfer" } };
     }
 
-    MOCK_ACCOUNT.balance -= amount;
-    const txn: MockTransaction = {
-      id: `TXN-${Date.now().toString(36).toUpperCase()}`,
-      type: "debit",
-      description: `Transfer to ${recipientAccount} (${BANK_NAMES[bankCode] || bankCode})`,
-      amount,
-      date: new Date().toISOString().slice(0, 10),
-      balanceAfter: MOCK_ACCOUNT.balance,
-    };
-    MOCK_TRANSACTIONS.unshift(txn);
+    const txn = recordTransaction(customerId, "debit", `Transfer to ${recipientAccount} (${BANK_NAMES[bankCode] || bankCode})`, amount);
+    if (!txn) {
+      return { name: "make_transfer", success: false, data: { error: "Failed to process transfer" } };
+    }
 
     return {
       name: "make_transfer",
@@ -133,13 +107,14 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
         bank: BANK_NAMES[bankCode] || bankCode,
         amount,
         narration,
-        newBalance: MOCK_ACCOUNT.balance,
+        newBalance: txn.balanceAfter,
         status: "completed",
       },
     };
   },
 
   recharge_airtime: async (args) => {
+    const customerId = args.customerId as string;
     const phoneNumber = args.phoneNumber as string;
     const amount = args.amount as number;
     const network = args.network as string;
@@ -150,20 +125,14 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
     if (amount > GUARDRAILS.maxRechargeAmount) {
       return { name: "recharge_airtime", success: false, data: { error: `Amount exceeds maximum recharge limit of ₦${GUARDRAILS.maxRechargeAmount.toLocaleString()}` } };
     }
-    if (amount > MOCK_ACCOUNT.balance) {
+    if (!hasSufficientBalance(customerId, amount)) {
       return { name: "recharge_airtime", success: false, data: { error: "Insufficient balance for this recharge" } };
     }
 
-    MOCK_ACCOUNT.balance -= amount;
-    const txn: MockTransaction = {
-      id: `TXN-${Date.now().toString(36).toUpperCase()}`,
-      type: "airtime",
-      description: `${NETWORK_NAMES[network] || network} Airtime - ${phoneNumber}`,
-      amount,
-      date: new Date().toISOString().slice(0, 10),
-      balanceAfter: MOCK_ACCOUNT.balance,
-    };
-    MOCK_TRANSACTIONS.unshift(txn);
+    const txn = recordTransaction(customerId, "airtime", `${NETWORK_NAMES[network] || network} Airtime - ${phoneNumber}`, amount);
+    if (!txn) {
+      return { name: "recharge_airtime", success: false, data: { error: "Failed to process recharge" } };
+    }
 
     return {
       name: "recharge_airtime",
@@ -173,13 +142,14 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
         phoneNumber,
         network: NETWORK_NAMES[network] || network,
         amount,
-        newBalance: MOCK_ACCOUNT.balance,
+        newBalance: txn.balanceAfter,
         status: "completed",
       },
     };
   },
 
   pay_bills: async (args) => {
+    const customerId = args.customerId as string;
     const biller = args.biller as string;
     const accountNumber = args.accountNumber as string;
     const amount = args.amount as number;
@@ -190,20 +160,14 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
     if (amount > GUARDRAILS.maxBillPayment) {
       return { name: "pay_bills", success: false, data: { error: `Amount exceeds maximum bill payment limit of ₦${GUARDRAILS.maxBillPayment.toLocaleString()}` } };
     }
-    if (amount > MOCK_ACCOUNT.balance) {
+    if (!hasSufficientBalance(customerId, amount)) {
       return { name: "pay_bills", success: false, data: { error: "Insufficient balance for this payment" } };
     }
 
-    MOCK_ACCOUNT.balance -= amount;
-    const txn: MockTransaction = {
-      id: `TXN-${Date.now().toString(36).toUpperCase()}`,
-      type: "bill",
-      description: `${BILLER_NAMES[biller] || biller} - ${accountNumber}`,
-      amount,
-      date: new Date().toISOString().slice(0, 10),
-      balanceAfter: MOCK_ACCOUNT.balance,
-    };
-    MOCK_TRANSACTIONS.unshift(txn);
+    const txn = recordTransaction(customerId, "bill", `${BILLER_NAMES[biller] || biller} - ${accountNumber}`, amount);
+    if (!txn) {
+      return { name: "pay_bills", success: false, data: { error: "Failed to process bill payment" } };
+    }
 
     return {
       name: "pay_bills",
@@ -213,21 +177,28 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
         biller: BILLER_NAMES[biller] || biller,
         accountNumber,
         amount,
-        newBalance: MOCK_ACCOUNT.balance,
+        newBalance: txn.balanceAfter,
         status: "completed",
       },
     };
   },
 
-  get_account: async () => ({
-    name: "get_account",
-    success: true,
-    data: {
-      accountId: maskAccount(MOCK_ACCOUNT.accountId),
-      name: MOCK_ACCOUNT.name,
-      accountType: MOCK_ACCOUNT.type,
-    },
-  }),
+  get_account: async (args) => {
+    const customerId = args.customerId as string;
+    const customer = getCustomer(customerId);
+    if (!customer) {
+      return { name: "get_account", success: false, data: { error: "Customer not found" } };
+    }
+    return {
+      name: "get_account",
+      success: true,
+      data: {
+        accountId: maskAccount(customer.accountId),
+        name: customer.name,
+        accountType: customer.accountType,
+      },
+    };
+  },
 
   create_ticket: async (args) => {
     const subject = args.subject as string;
@@ -260,11 +231,6 @@ const executors: Partial<Record<ToolName, ToolExecutor>> = {
     };
   },
 };
-
-function maskAccount(account: string): string {
-  if (account.length <= 4) return account;
-  return `${account.slice(0, 3)}****${account.slice(-3)}`;
-}
 
 export async function executeTool(
   name: ToolName,
