@@ -213,16 +213,34 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
         setState(ws, sessionId, "thinking");
         sessionStore.updateStatus(sessionId, "responding");
 
+        const pendingAction = sessionStore.getPendingAction(sessionId);
+
         const ctx: AgentContext = {
           sessionId,
           language: detectedLang,
           turnCount,
           toolCallsThisTurn: 0,
           conversationHistory,
+          pendingAction: pendingAction
+            ? { toolCall: pendingAction.toolCall, confirmationPrompt: pendingAction.confirmationPrompt }
+            : null,
         };
 
         const decision = await reason(ctx, finalText);
         sendEvent(ws, "agent_thinking", decision.thinking);
+
+        // If the agent proposed a destructive action, store it as pending
+        if (decision.pendingConfirmation) {
+          sessionStore.setPendingAction(
+            sessionId,
+            decision.pendingConfirmation.toolCall,
+            decision.pendingConfirmation.confirmationPrompt,
+          );
+          sessionStore.updateStatus(sessionId, "awaiting_tool");
+        } else {
+          // No pending confirmation — clear any stale one
+          sessionStore.clearPendingAction(sessionId);
+        }
 
         // Emit tool calls
         for (const call of decision.toolCalls) {
@@ -230,7 +248,7 @@ export function handleSessionWs(ws: WebSocket, req: IncomingMessage): void {
           sendEvent(ws, "tool_call", callData);
         }
 
-        // Execute tools
+        // Execute tools (act is a passthrough now — execution happens in reason())
         const { results, finalResponseText, finalStatus } = await act(decision, ctx);
 
         for (const result of results) {

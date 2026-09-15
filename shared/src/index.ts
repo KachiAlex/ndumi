@@ -94,10 +94,21 @@ export interface SessionEndData {
 }
 
 export type ToolName =
-  | "check_order"
-  | "create_ticket"
+  | "check_balance"
+  | "get_transactions"
+  | "make_transfer"
+  | "recharge_airtime"
+  | "pay_bills"
   | "get_account"
+  | "create_ticket"
   | "escalate_to_human";
+
+/** Tools that modify state and require explicit user confirmation. */
+export const DESTRUCTIVE_TOOLS: ToolName[] = [
+  "make_transfer",
+  "recharge_airtime",
+  "pay_bills",
+];
 
 export interface ToolCall {
   name: ToolName;
@@ -120,6 +131,13 @@ export interface ToolResultData {
   success: boolean;
   data: Record<string, unknown>;
   durationMs: number;
+}
+
+/** A pending destructive action awaiting user confirmation. */
+export interface PendingAction {
+  toolCall: ToolCall;
+  confirmationPrompt: string;
+  createdAt: number;
 }
 
 export interface CreateSessionRequest {

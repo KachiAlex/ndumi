@@ -1,9 +1,10 @@
 import { randomUUID } from "crypto";
-import type { Session, TranscriptEntry, LanguageCode, AgentState, SessionStatus } from "@ndumi/shared";
+import type { Session, TranscriptEntry, LanguageCode, AgentState, SessionStatus, ToolCall } from "@ndumi/shared";
 
 interface SessionRecord extends Session {
   transcripts: TranscriptEntry[];
   endedAt: number | null;
+  pendingAction: { toolCall: ToolCall; confirmationPrompt: string; createdAt: number } | null;
 }
 
 class SessionStore {
@@ -22,6 +23,7 @@ class SessionStore {
       wsUrl: `/v1/sessions/${id}/stream`,
       transcripts: [],
       endedAt: null,
+      pendingAction: null,
     };
     this.sessions.set(id, record);
     return this.toSession(record);
@@ -82,6 +84,25 @@ class SessionStore {
 
   delete(id: string): void {
     this.sessions.delete(id);
+  }
+
+  setPendingAction(id: string, toolCall: ToolCall, confirmationPrompt: string): void {
+    const rec = this.sessions.get(id);
+    if (!rec) throw new Error(`Session ${id} not found`);
+    rec.pendingAction = { toolCall, confirmationPrompt, createdAt: Date.now() };
+    rec.updatedAt = Date.now();
+  }
+
+  getPendingAction(id: string): SessionRecord["pendingAction"] {
+    const rec = this.sessions.get(id);
+    return rec?.pendingAction ?? null;
+  }
+
+  clearPendingAction(id: string): void {
+    const rec = this.sessions.get(id);
+    if (!rec) return;
+    rec.pendingAction = null;
+    rec.updatedAt = Date.now();
   }
 
   activeCount(): number {
